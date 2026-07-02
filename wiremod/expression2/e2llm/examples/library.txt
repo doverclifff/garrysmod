@@ -1,0 +1,702 @@
+@name lib/drv/digitalscreen/v1/library
+@strict
+
+#[
+
+Digital Screen internals:
+
+Memory mapping [1]:
+$[0, 786432) --------> Image data
+$[786432, 1048569) --> unused [needs confirmation]
+$[1048569, 1048576] -> Control registers, 8 in total
+
+Control registers [1]:
+
+There are 8 control registers.
+
+$1048569: rw: Color mode
+$1048570: rw: Clear row (Y)
+$1048571: rw: Clear column (X)
+$1048572: rw: Vertical resolution (Y) in pixels
+$1048573: rw: Horizontal resolution (X) in pixels
+$1048574: rw: Hardware clear screen
+$1048575: rw: Clk
+$1048576: rw: Compression enable
+
+Color modes [1][needs clarification]:
+
+There are four color modes. They can be selected by
+writing magic values to the color mode control register.
+There are four magic values, each corresponding to a different
+color mode.
+
+0: RGBXXX
+1: R G B
+2: 65536 * R + 256 * G + 1 * B
+3: RRRGGGBBB
+
+The function rgb2digi(V, N) -> N provides an easy
+way to map RGB-encoded color data to the digital screen color space.
+
+Clk behavior:
+
+Digital screen clocking is slightly unintuitive. When the Clk
+control register is set 1 (or True), any following writes to the screen memory
+take effect immediately / as fast as possible. When Clk equals 0 (or False),
+writes are buffered until the next rising-edge of Clk.
+
+This contrasts with the behavior of the Console Screen, which permits only a
+single write per clock rising-edge.
+
+Clear screen register behavior:
+
+Writing 0 to the hardware clear register ($1048574 = 0) will trigger a screen clear. [1]
+
+Sources:
+[1] https://web.archive.org/web/20160323170932/http://wiki.wiremod.com/wiki/Digital_Screen
+
+]#
+
+# -- x #
+
+# -- Semantic Versioning --                                       -- #
+
+#include "lib/semver/v1/library"
+SEMVER_VERSION:semVerAssertGte("SemVer", 1, 0, 0)
+DRV_DIGITALSCREEN_VERSION = newSemVer("DSDriver", 0, 1, 0)
+
+# -- x #
+
+# -- Global Constants --                                          -- #
+
+DS_STRINGS = table(
+    "error_assertion_violated" = "An internal assertion was violated.",
+    "error_invalid_register_name" = "Tried indexing the register file with an invalid key.",
+    "error_vec2_out_of_bounds_screenspace" = "The %s part of XY coordinate pair (%d, %d) is outside and %s the screen-space rectangle (0, 0, %d-1, %d-1).",
+    "error_invalid_extent_name" = "The memory extent \"%s\" does not exist.",
+    "error_address_not_in_extent" = "Address %d is outside of the %s memory extent [%d, %d].",
+    "error_invalid_color_mode" = "Color mode %d is not a valid color mode. Choices are one of: 0, 1, 2, 3 (RGBXXX, R G B, R*65536+G*256+B, RRRGGGBBB, respectively)."
+)
+
+DS_MEMORY_MAP = table(
+    "ImageData" = table(
+        "start" = 0,
+        "end" = 786431,
+        "size" = 786432
+    ),
+    "Unallocated" = table(
+        "start" = 786432,
+        "end" = 1048568,
+        "size" = 1 + 1048568 - 786432
+    ),
+    "RegisterFile" = table(
+        "start" = 1048569,
+        "end" = 1048576,
+        "size" = 1 + 1048576 - 1048569
+    )
+)
+
+DS_MEMORY_EXTENT_NAMES = DS_MEMORY_MAP:keys() # = array("ImageData", "Unallocated", "RegisterFile")
+
+DS_REGISTER_FILE_MAP = table(
+    "ColorMode" = 1048569,
+    "ClearRow" = 1048570,
+    "ClearColumn" = 1048571,
+    "ResolutionY" = 1048572,
+    "ResolutionX" = 1048573,
+    "ClearScreen" = 1048574,
+    "ClkEnable" = 1048575,
+    "CompressionEnable" = 1048576
+)
+
+DS_REGISTER_DEFAULT_VALUE = table(
+    "ColorMode" = 0,
+    "ClearRow" = 0,
+    "ClearColumn" = 0,
+    "ResolutionY" = 512,
+    "ResolutionX" = 512,
+    "ClearScreen" = 0,
+    "ClkEnable" = 0,
+    "CompressionEnable" = 0
+)
+
+# -- x #
+
+# -- Error Primitives --                                          -- #
+
+# @doc Raises an unrecoverable error
+# @name dsError
+# @out NoReturn
+function void dsError(Caller:string, Msg:string) {
+    let DSLibSemVerString = DRV_DIGITALSCREEN_VERSION:semVerGetString() + ": "
+    let ErrString = DSLibSemVerString + "in " + Caller + ": " + Msg
+    error(ErrString)
+}
+
+# @doc Raises an unrecoverable error IFF the passed expression is falsy.
+# @name dsAssert
+# @out Number | NoReturn
+function number dsAssert(Expression:number, Caller:string, Msg:string) {
+    if (!Expression) {
+        dsError(Caller, DS_STRINGS["error_assertion_violated", string] + " " + Msg)
+    }
+    return 1
+}
+
+# -- x #
+
+# -- Getter Primitives (Non-hispeed/wirelink) --                  -- #
+
+# @doc  Returns the current version of the digital screen driver.
+# @name dsGetDriverVersion
+# @out  Table
+function table dsGetDriverVersion() {
+    return DRV_DIGITALSCREEN_VERSION
+}
+
+# @doc  Returns a table which describes the digital screen memory layout.
+# @name dsGetMemoryMap
+# @out  Table
+function table dsGetMemoryMap() {
+    return DS_MEMORY_MAP:copy()
+}
+
+# @doc  Returns a table which describes the digital screen "register file" memory region.
+# @name dsGetRegisterFileMap
+# @out  Table
+function table dsGetRegisterFileMap() {
+    return DS_REGISTER_FILE_MAP:copy()
+}
+
+# @doc  Returns a table whose keys are named registers and values are sane defaults
+# @name dsGetAllRegisterDefaultStates
+# @out  Table
+function table dsGetAllRegisterDefaultValues() {
+    return DS_REGISTER_DEFAULT_VALUE:copy()
+}
+
+# @doc  Returns a sane default value for the named register.
+# @name dsGetRegisterDefaultState
+# @out  Number
+function number dsGetRegisterDefaultValue(RegisterName:string) {
+    return DS_REGISTER_DEFAULT_VALUE[RegisterName, number]
+}
+
+# @doc  Returns an offset to the start of the DS image data region.
+# @name dsGetOffsetStartImageData
+# @out  Number
+function number dsGetOffsetStartImageData() {
+    return DS_MEMORY_MAP["ImageData", table]["start", number]
+}
+
+# @doc  Returns an offset to the start of the DS unallocated region.
+# @name dsGetOffsetStartUnallocated
+# @out  Number
+function number dsGetOffsetStartUnallocated() {
+    return DS_MEMORY_MAP["Unallocated", table]["start", number]
+}
+
+# @doc  Returns an offset to the start of the DS "register file" region.
+# @name dsGetOffsetStartRegisterFile
+# @out  Number
+function number dsGetOffsetStartRegisterFile() {
+    return DS_MEMORY_MAP["RegisterFile", table]["start", number]
+}
+
+# @doc  Returns an offset to the start of the DS image data region.
+# @name dsGetOffsetEndImageData
+# @out  Number
+function number dsGetOffsetEndImageData() {
+    return DS_MEMORY_MAP["ImageData", table]["end", number]
+}
+
+# @doc  Returns an offset to the start of the DS unallocated region.
+# @name dsGetOffsetEndUnallocated
+# @out  Number
+function number dsGetOffsetEndUnallocated() {
+    return DS_MEMORY_MAP["Unallocated", table]["end", number]
+}
+
+# @doc  Returns an offset to the start of the DS "register file" region.
+# @name dsGetOffsetEndRegisterFile
+# @out  Number
+function number dsGetOffsetEndRegisterFile() {
+    return DS_MEMORY_MAP["RegisterFile", table]["end", number]
+}
+
+# @doc  Returns 2-ary array containing the extents of the DS image data region.
+# @name dsGetOffsetsExtentsImageData
+# @out  Array
+function array dsGetOffsetsExtentsImageData() {
+    return array(
+        DS_MEMORY_MAP["ImageData", table]["start", number],
+        DS_MEMORY_MAP["ImageData", table]["end", number]
+    )
+}
+
+# @doc  Returns 2-ary array containing the extents of the DS unallocated region.
+# @name dsGetOffsetsExtentsUnallocated
+# @out  Array
+function array dsGetOffsetsExtentsUnallocated() {
+    return array(
+        DS_MEMORY_MAP["Unallocated", table]["start", number],
+        DS_MEMORY_MAP["Unallocated", table]["end", number]
+    )
+}
+
+# @doc  Returns 2-ary array containing the extents of the DS "register file" region.
+# @name dsGetOffsetsExtentsRegisterFile
+# @out  Array
+function array dsGetOffsetsExtentsRegisterFile() {
+    return array(
+        DS_MEMORY_MAP["RegisterFile", table]["start", number],
+        DS_MEMORY_MAP["RegisterFile", table]["end", number]
+    )
+}
+
+# -- x #
+
+# -- Setter Primitives (non-hispeed/wirelink) --                  -- #
+
+# reserved
+
+# -- x #
+
+# -- Validation Primitives --                                     -- #
+
+# @doc   Guarantees that the passed register name is contained in the set DS_REGISTER_FILE_MAP:keys(). Returns 1. Else, raises an error.
+# @name  dsValidateRegisterNameOrError
+# @group Primitive, Validation
+# @out   Number
+function number dsValidateRegisterNameOrError(RegisterName:string) {
+    if (DS_REGISTER_FILE_MAP:keys():indexOf(RegisterName) == 0) {
+        dsError(
+            "dsValidateRegisterNameOrError",
+            DS_STRINGS["error_invalid_register_name", string]
+        )
+    }
+    return 1
+}
+
+# @doc   Guarantees that the coordinate pair XY is within the screen's bounds, returns 1. Else, raises an error.
+# @name  dsValidateXYIsInScreenBounds
+# @group Primitive, Validation
+# @out   Number
+function number wirelink:dsValidateXYIsInScreenBounds(XY:vector2) {
+    let ResolutionX = This[DS_REGISTER_FILE_MAP["ResolutionX", number]]
+    let ResolutionY = This[DS_REGISTER_FILE_MAP["ResolutionY", number]]
+    let X = XY:x()
+    let Y = XY:y()
+    let Caller = "dsValidateXYIsInScreenBounds"
+    let ErrString = DS_STRINGS["error_vec2_out_of_bounds_screenspace", string]
+    dsAssert(
+        X >= 0, 
+        Caller, 
+        format(ErrString, "X", X, Y, "to the left of", ResolutionX, ResolutionY)
+    )
+    dsAssert(
+        X < ResolutionX, 
+        Caller, 
+        format(ErrString, "X", X, Y, "to the right of", ResolutionX, ResolutionY)
+    )
+    dsAssert(
+        Y >= 0, 
+        Caller, 
+        format(ErrString, "Y", X, Y, "above the", ResolutionX, ResolutionY)
+    )
+    dsAssert(
+        Y < ResolutionY, 
+        Caller, 
+        format(ErrString, "Y", X, Y, "below the", ResolutionX, ResolutionY)
+    )
+    return 1
+}
+
+# @doc   Guarantees that the address pointed to by Ptr is within the bounds of the specified memory extent, returns 1. Else, raises an error.
+# @name  dsValidatePointsToExtentOrError
+# @group Primitive, Validation
+# @out   Number
+function number dsValidatePointsToExtentOrError(Ptr:number, ExtentName:string) {
+    let Caller = "dsValidatePointsToExtentOrError"
+    let ErrString = DS_STRINGS["error_invalid_extent_name", string]
+    dsAssert(
+        DS_MEMORY_EXTENT_NAMES:indexOf(ExtentName) != 0,
+        Caller,
+        format(ErrString, ExtentName)
+    )
+    let ExtentStart = 0
+    let ExtentEnd = 0
+    if ( ExtentName == "ImageData" ) {
+        ExtentStart = dsGetOffsetStartImageData()
+        ExtentEnd = dsGetOffsetEndImageData()
+    } elseif ( ExtentName == "Unallocated" ) {
+        ExtentStart = dsGetOffsetStartUnallocated()
+        ExtentEnd = dsGetOffsetEndUnallocated()
+    } elseif ( ExtentName == "RegisterFile" ) {
+        ExtentStart = dsGetOffsetStartRegisterFile()
+        ExtentEnd = dsGetOffsetEndRegisterFile()
+    }
+    
+    ErrString = DS_STRINGS["error_address_not_in_extent", string]
+    dsAssert(
+        Ptr >= ExtentStart, 
+        Caller, 
+        format(ErrString, Ptr, ExtentName, ExtentStart, ExtentEnd)
+    )
+    dsAssert(
+        Ptr <= ExtentEnd, 
+        Caller, 
+        format(ErrString, Ptr, ExtentName, ExtentStart, ExtentEnd)
+    )
+    return 1
+}
+
+# @doc   Guarantees that the address pointed to by Ptr is within the bounds of the ImageData extent, returns 1. Else, raises an error.
+# @name  dsValidatePointsToImageDataExtentOrError
+# @group Primitive, Validation
+# @out   Number
+function number dsValidatePointsToImageDataExtentOrError(Ptr:number) {
+    let ExtentStart = dsGetOffsetStartImageData()
+    let ExtentEnd = dsGetOffsetEndImageData()
+    
+    let Caller = "dsValidatePointsToImageDataExtentOrError"
+    let ErrString = "Address %d is outside of the ImageData memory extent [%d, %d]."
+    dsAssert(
+        Ptr >= ExtentStart, 
+        Caller, 
+        format(ErrString, Ptr, ExtentStart, ExtentEnd)
+    )
+    dsAssert(
+        Ptr <= ExtentEnd, 
+        Caller, 
+        format(ErrString, Ptr, ExtentStart, ExtentEnd)
+    )
+    return 1
+}
+
+# @doc   Guarantees that the address pointed to by Ptr is within the bounds of the Unallocated extent, returns 1. Else, raises an error.
+# @name  dsValidatePointsToUnallocatedExtentOrError
+# @group Primitive, Validation
+# @out   Number
+function number dsValidatePointsToUnallocatedExtentOrError(Ptr:number) {
+    let ExtentStart = dsGetOffsetStartUnallocated()
+    let ExtentEnd = dsGetOffsetEndUnallocated()
+    
+    let Caller = "dsValidatePointsToUnallocatedExtentOrError"
+    let ErrString = "Address %d is outside of the Unallocated memory extent [%d, %d]."
+    dsAssert(
+        Ptr >= ExtentStart, 
+        Caller, 
+        format(ErrString, Ptr, ExtentStart, ExtentEnd)
+    )
+    dsAssert(
+        Ptr <= ExtentEnd, 
+        Caller, 
+        format(ErrString, Ptr, ExtentStart, ExtentEnd)
+    )
+    return 1
+}
+
+# @doc  Guarantees that the address pointed to by Ptr is within the bounds of the RegisterFile extent, returns 1. Else, raises an error.
+# @name dsValidatePointsToRegisterFileExtentOrError
+# @group Primitive, Validation
+# @out  Number
+function number dsValidatePointsToRegisterFileExtentOrError(Ptr:number) {
+    let ExtentStart = dsGetOffsetStartRegisterFile()
+    let ExtentEnd = dsGetOffsetEndRegisterFile()
+    
+    let Caller = "dsValidatePointsToRegisterFileExtentOrError"
+    let ErrString = "Address %d is outside of the RegisterFile memory extent [%d, %d]."
+    dsAssert(
+        Ptr >= ExtentStart, 
+        Caller, 
+        format(ErrString, Ptr, ExtentStart, ExtentEnd)
+    )
+    dsAssert(
+        Ptr <= ExtentEnd, 
+        Caller, 
+        format(ErrString, Ptr, ExtentStart, ExtentEnd)
+    )
+    return 1
+}
+
+# @doc Guarantees that the value of ColorMode is contained in the set (0, 1, 2, 3).
+# @name dsValidateColorModeOrError
+# @group Primitive, Validation
+# @out number
+function number dsValidateColorModeOrError(ColorMode:number) {
+    let Caller = "dsValidateColorModeOrError"
+    let ErrString = DS_STRINGS["error_invalid_color_mode", string]
+    dsAssert(
+        # ColorMode must be one of: 0, 1, 2, 3.
+        array(0, 1, 2, 3):indexOf(ColorMode) != 0,
+        Caller,
+        format(ErrString, ColorMode)
+    )
+    return 1
+}
+
+# -- x #
+
+# -- 2-D geometry helper methods --                               -- #
+# @doc Given a point in 2-D screen-space, derives a pointer to the corresponding pixel's hispeed memory cell.
+# @name dsDeriveImageDataPtrFromScreenspace2D
+# @out  Number
+function number wirelink:dsDeriveImageDataPtrFromScreenspace2D(XY:vector2) {
+    # _ = This:dsValidateXYIsInScreenBounds(XY)
+    let DerivedPtr = dsGetOffsetStartImageData() + XY:y() * This[DS_REGISTER_FILE_MAP["ResolutionY", number]] + 1 * XY:x()
+    # _ = dsValidateAddressIsInImageDataExtentOrError(DerivedPtr)
+    return DerivedPtr
+}
+
+# -- x #
+
+# -- Read Primitives (hispeed)  --                                -- #
+
+# @doc  Reads from the named register, returns the value contained.
+# @name dsReadRegister
+# @group Primitive, Read (hispeed)
+# @out  Number
+function number wirelink:dsReadRegister(RegisterName:string) {
+    return This[DS_REGISTER_FILE_MAP[RegisterName, number]]
+}
+
+# @doc  Reads and returns the value in a slot in the ImageData extent.
+# @name dsReadPixel
+# @group Primitive, Read (hispeed)
+# @out  Number
+function number wirelink:dsReadPixel(Offset:number) {
+    let DerivedAddress = dsGetOffsetStartImageData() + Offset
+    # _ = dsValidateAddressIsInImageDataExtentOrError(DerivedAddress)
+    return This[DerivedAddress]
+}
+
+# @doc
+# @name dsReadColorMode
+# @group Primitive, Read (hispeed)
+# @out Number
+function number wirelink:dsReadColorMode() {
+    return This[DS_REGISTER_FILE_MAP["ColorMode", number]]
+}
+
+# @doc
+# @name dsReadResolutionY
+# @group Primitive, Read (hispeed)
+# @out Number
+function number wirelink:dsReadResolutionY() {
+    return This[DS_REGISTER_FILE_MAP["ResolutionY", number]]
+}
+
+# @doc
+# @name dsReadResolutionX
+# @group Primitive, Read (hispeed)
+# @out Number
+function number wirelink:dsReadResolutionX() {
+    return This[DS_REGISTER_FILE_MAP["ResolutionX", number]]
+}
+
+# @doc
+# @name dsReadClearScreen
+# @group Primitive, Read (hispeed)
+# @out Number
+function number wirelink:dsReadClearScreen() {
+    return This[DS_REGISTER_FILE_MAP["ClearScreen", number]]
+}
+
+# @doc
+# @name dsReadClkEnable
+# @group Primitive, Read (hispeed)
+# @out Number
+function number wirelink:dsReadClkEnable() {
+    return This[DS_REGISTER_FILE_MAP["ClkEnable", number]]
+}
+
+# @doc
+# @name dsReadCompressionEnable
+# @group Primitive, Read (hispeed)
+# @out Number
+function number wirelink:dsReadCompressionEnable() {
+    return This[DS_REGISTER_FILE_MAP["CompressionEnable", number]]
+}
+
+# -- x #
+
+# -- Write Primitives (hispeed) --                                -- #
+
+# @name dsWriteRegister
+# @doc  Overwrites the named register with a new value, returns the new value of the named register.
+# @group Primitive, Write (hispeed)
+# @out  Number
+function number wirelink:dsWriteRegister(RegisterName:string, Value:number ) {
+    This[DS_REGISTER_FILE_MAP[RegisterName, number], number] = Value
+    return Value
+}
+
+# @name dsWritePixel
+# @doc  Overwrites the pixel at Ptr with a new value, returns the new value of the pixel.
+# @group Primitive, Write (hispeed)
+# @out  Number
+# @overload
+function number wirelink:dsWritePixel(Ptr:number, Value:number) {
+    This[Ptr, number] = Value
+    return Value
+}
+
+# @name dsWriteRegisterDefaultValue
+# @doc  Overwrites the named register with a sane default value, returns the new value of the named register.
+# @group Primitive, Write (hispeed)
+# @out  Number
+function number wirelink:dsWriteRegisterDefaultValue(RegisterName:string) {
+    let DefaultValue = dsGetRegisterDefaultValue(RegisterName)
+    This[DS_REGISTER_FILE_MAP[RegisterName, number], number] = DefaultValue
+    return DefaultValue
+}
+
+# @name dsWriteColorMode
+# @doc Overwrites the ColorMode register with a new color mode value (must be one of: 0, 1, 2, 3).
+# @group Primitive, Write (hispeed)
+# @out Number
+function number wirelink:dsWriteColorMode(ColorMode:number) {
+    This[DS_REGISTER_FILE_MAP["ColorMode", number]] = ColorMode
+    return ColorMode
+}
+
+# @name dsWriteResolutionY
+# @doc Overwrites the ResolutionY register with a non-zero unsigned integer
+# @group Primitive, Write (hispeed)
+# @out Number
+function number wirelink:dsWriteResolutionY(Pixels:number) {
+    This[DS_REGISTER_FILE_MAP["ResolutionY", number]] = Pixels
+    return Pixels
+}
+
+# @name dsWriteResolutionX
+# @doc Overwrites the ResolutionX register with a non-zero unsigned integer
+# @group Primitive, Write (hispeed)
+# @out Number
+function number wirelink:dsWriteResolutionX(Pixels:number) {
+    This[DS_REGISTER_FILE_MAP["ResolutionX", number]] = Pixels
+    return Pixels
+}
+
+# @name dsWriteClearScreen
+# @doc Overwrites the ClearScreen register with a boolean Enable.
+# @group Primitive, Write (hispeed)
+# @out Number
+function number wirelink:dsWriteClearScreen(Enable:number) {
+    Enable = Enable >= 1
+    This[DS_REGISTER_FILE_MAP["ClearScreen", number]] = Enable
+    return Enable
+}
+
+# @name dsWriteClkEnable
+# @doc Overwrites the ClkEnable register with a boolean Enable.
+# @group Primitive, Write (hispeed)
+# @out Number
+function number wirelink:dsWriteClkEnable(Enable:number) {
+    Enable = Enable >= 1
+    This[DS_REGISTER_FILE_MAP["ClkEnable", number]] = Enable
+    return Enable
+}
+
+# @name dsWriteCompressionEnable
+# @doc Overwrites the CompressionEnable register with a boolean Enable.
+# @group Primitive, Write (hispeed)
+# @out Number
+function number wirelink:dsWriteCompressionEnable(Enable:number) {
+    Enable = Enable >= 1
+    This[DS_REGISTER_FILE_MAP["CompressionEnable", number]] = Enable
+    return Enable
+}
+
+# -- x #
+
+# -- Write Helpers (hispeed) --                                   -- #
+
+# @name  dsWriteClkEnableToggle
+# @doc   Reads the value stored in the ClkEnable register, inverts it, then overwrites ClkEnable with the new value. Returns the new value of ClkEnable.
+# @out   Number
+# @group Helper, Write (hispeed)
+function number wirelink:dsWriteClkEnableToggle() {
+    return This:dsWriteClkEnable(!This:dsReadClkEnable())
+}
+
+# @doc   Overwrites ALL named registers with sane default values.
+# @name  dsWriteResetAllRegisters
+# @out   Number
+# @group Helper, Write (hispeed)
+function void wirelink:dsWriteResetAllRegisters() {
+    foreach ( RegisterName:string, _:number = DS_REGISTER_DEFAULT_VALUE ) {
+        This:dsWriteRegisterDefaultValue(RegisterName)
+    }
+    return 1
+}
+
+# -- x #
+
+# -- Read Helpers (hispeed) --                                    -- #
+
+# @doc
+# @name dsReadResolutionXY
+# @group Primitive, Read (hispeed)
+# @out Vector2
+function vector2 wirelink:dsReadResolutionXY() {
+    return vec2(This:dsReadResolutionX(), This:dsReadResolutionY())
+}
+
+# @name  dsReadPixel
+# @doc   Reads and returns the value in a slot in the ImageData extent.
+# @out   Number
+# @group Helper, Read (hispeed)
+# @overload
+function number wirelink:dsReadPixel(XY:vector2) {
+    let Ptr = This:dsDeriveImageDataPtrFromScreenspace2D(XY)
+    return This[Ptr]
+}
+
+# -- x #
+
+# -- Write Helpers (hispeed) --                                   -- #
+
+# @name  dsWritePixel
+# @doc   Overwrites the value in a slot in the ImageData extent.
+# @out   Number
+# @group Helper, Read (hispeed)
+# @overload
+function number wirelink:dsWritePixel(XY:vector2, Value:number) {
+    let Ptr = This:dsDeriveImageDataPtrFromScreenspace2D(XY)
+    This[Ptr, number] = Value
+    return 1
+}
+
+# -- x #
+
+# -- Validation Helper Methods --                                 -- #
+
+# reserved
+
+# -- x #
+
+# -- Dead code --                                       -- #
+
+#[
+# @doc 
+# @name dsValidateReturnValueIsTypeOrError
+# @out Number
+function number dsValidateReturnValueIsTypeOrError(...Args:table) {
+    dsAssert(
+        Args:count() == 2, 
+        "dsValidateReturnValueIsTypeOrError",
+        "expected exactly two arguments."
+    )
+    let ReturnType = Args:pop()  # pop  args[2]
+    let ReturnValue = Args:pop() # pop  args[1]
+    _ = ReturnType
+    _ = ReturnValue
+    #...
+    dsError("dsValidateReturnValueIsTypeOrError", "function is not implemented")
+    return 0
+}
+]#
+
+# -- x #

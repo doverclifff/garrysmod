@@ -1,0 +1,13 @@
+function string timestampUTC() {
+    let UTC = dateUTC()
+    let DT = table()
+    foreach (K:string, V:number = UTC) {
+        if ( V < 10 ) {
+            DT[K, string] = "0" + UTC[K, number]
+        } else {
+            DT[K, string] = UTC[K, number]:toString()
+        }
+    }
+    S = DT["year", string] + "-" + DT["month", string] + "-" + DT["day", string] + " " + DT["hour", string] + ":" + DT["min", string] + ":" + DT["sec", string] + " UTC"
+    return S
+}

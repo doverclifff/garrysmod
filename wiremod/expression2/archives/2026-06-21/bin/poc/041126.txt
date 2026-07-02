@@ -1,0 +1,20 @@
+@name bin/poc/041126
+@inputs 
+@outputs 
+@persist 
+@trigger none 
+@strict
+
+#[
+    Documentation, instructions and examples are available at:
+    https://github.com/wiremod/wire/wiki/Expression-2
+    ^ There you can read about: ^
+
+    - What is @strict and other directives (https://github.com/wiremod/wire/wiki/Expression-2-Directives)
+    - What are events (https://github.com/wiremod/wire/wiki/Expression-2-Events)
+    - What are lambdas (https://github.com/wiremod/wire/wiki/E2-Guide:-Lambdas)
+
+    You can find our Discord here: https://discord.gg/H8UKY3Y
+    You can find our Reddit here:  https://www.reddit.com/r/wiremod
+    Please report any bugs here:   https://github.com/wiremod/wire/issues
+]#

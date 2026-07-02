@@ -1,0 +1,207 @@
+@name bin/poc/1226
+@inputs 
+@outputs 
+@persist [PlyLast]:table [Anchor]:vector [Delay MassUnit]:number [Material]:string [PropsTbl]:table [RootProp]:entity
+@trigger none 
+@strict
+@model models/sprops/rectangles_thin/size_1_5/rect_6x6x1_5.mdl
+
+let TgtAPS = 8
+Delay = ceil(_TICKINTERVAL * ceil(66.6 / TgtAPS, 0), 4)
+print("" + round(1 / Delay, 2), "actions per second")
+
+PlyLast = table(
+    "toolgun" = owner():tool(),
+    "wpos" = owner():pos(),
+    "wang" = owner():angles()
+)
+
+propSpawnUndo(0)
+PropsTbl = table()
+MassUnit = 6
+# MaterialScale = vec2(0.5)
+Material = "WTP/plastic_1"
+Anchor = entity():pos() + vec(0, 0, 96)
+
+holoCreate(0, Anchor, vec(1), ang(0), vec4(255), "models/sprops/misc/axis_plane.mdl")
+holoCreate(1, 8 * vec(0, 1, 0) + Anchor, vec(1), ang(0), vec4(0.3, 1, 0.3, 0.8) * 255, "models/sprops/misc/axis_plane.mdl")
+holoCreate(2, -8 * vec(0, 1, 0) + Anchor, vec(1), ang(0), vec4(1, 0.3, 0.3, 0.8) * 255, "models/sprops/misc/axis_plane.mdl")
+
+
+timer(0x0 * Delay, function () {
+    let P = propSpawn("models/sprops/cuboids/height12/size_1/cube_12x96x12.mdl", Anchor + vec(0, 8, 1), ang(90) * ang(0, 1, 0) + ang(2.0, 0, 0), 1)
+    P:setColor(vec4(1.0, 1.0, 0.8, 1.0) * vec4(220))
+    P:setMass(4 * MassUnit)
+    P:setMaterial(Material)
+    PropsTbl["structural-body-0", entity] = P
+    RootProp = P
+})
+
+
+# fin3: set tool parameters, select fin3 tool
+timer(0x0f * Delay, function () { concmd("fin3_efficiency 0.95") })
+timer(0x10 * Delay, function () { concmd("fin3_fintype standard") })
+timer(0x11 * Delay, function () { concmd("fin3_camber 25") })
+timer(0x12 * Delay, function () { concmd("fin3_disablelowpass 1") }) # DISABLE FIN3 LPF
+timer(0x13 * Delay, function () { concmd("gmod_toolmode fin3") })
+
+# ply: enable noclip, slight transparency, disable ply shadow
+timer(0x14 * Delay, function () { owner():plyNoclip(1) })
+timer(0x16 * Delay, function () { owner():plyShadow(0) })
+
+# port wing: spawn, apply fin3
+timer(0x17 * Delay, function () {
+    let P = propSpawn("models/sprops/triangles_superthin/right/size_4/st_rtri_48x90.mdl", Anchor + vec(-24, 0, 0), ang(90) * ang(0, 1, -1), 1)
+    P:weld(RootProp, 0, 1)
+    P:setColor(vec(1.0, 0.9, 0.9) * vec(220))
+    P:setMaterial(Material)
+    P:setMass(2 * MassUnit)
+    P:noCollideAll(1)
+    PropsTbl["wing-port-0", entity] = P
+})
+timer(0x18 * Delay, function () { owner():plySetPos(Anchor + vec(-24, -24, 24)) })
+timer(0x19 * Delay, function () { owner():plySetAng(ang(90) * ang(1, 1, 0)) })
+timer(0x1a * Delay, function () { concmd("+attack") })
+timer(0x1b * Delay, function () { concmd("-attack") })
+timer(0x1c * Delay, function () { owner():plySetAng(ang(90) * ang(0, 1, 0)) })
+timer(0x1d * Delay, function () { concmd("+attack") })
+timer(0x1e * Delay, function () { concmd("-attack") })
+
+# starboard wing: spawn, apply fin3
+timer(0x20 * Delay, function () {
+    let P = propSpawn("models/sprops/triangles_superthin/right/size_4/st_rtri_48x90.mdl", Anchor + vec(24, 0, 0), ang(90) * ang(0, 1, 1), 1)
+    P:weld(RootProp, 0, 1)
+    P:setColor(vec(0.9, 1.0, 0.9) * vec(220))
+    P:setMaterial(Material)
+    P:setMass(2 * MassUnit)
+    P:noCollideAll(1)
+    PropsTbl["wing-starboard-0", entity] = P
+})
+timer(0x21 * Delay, function () { owner():plySetPos(Anchor + vec(24, -24, 24)) })
+timer(0x22 * Delay, function () { owner():plySetAng(ang(90) * ang(1, 1, 0)) })
+timer(0x23 * Delay, function () { concmd("+attack") })
+timer(0x24 * Delay, function () { concmd("-attack") })
+timer(0x25 * Delay, function () { owner():plySetAng(ang(90) * ang(0, 1, 0)) })
+timer(0x26 * Delay, function () { concmd("+attack") })
+timer(0x27 * Delay, function () { concmd("-attack") })
+
+# port control surface: spawn, apply fin3
+timer(0x30 * Delay, function () {
+    let P = propSpawn("models/sprops/rectangles_superthin/size_2/rect_12x36.mdl", Anchor + vec(-28, -51, 0), ang(90) * ang(2, 0, 0), 1)
+    P:setColor(vec(1.0, 0.9, 0.9) * vec(200))
+    P:setMaterial(Material)
+    P:setMass(1 * MassUnit)
+    P:noCollideAll(1)
+    PropsTbl["ctrlsurf-port-0", entity] = P
+})
+timer(0x31 * Delay, function () { owner():plySetPos(Anchor + vec(-21, -51, 24)) })
+timer(0x32 * Delay, function () { owner():plySetAng(ang(90) * ang(1, 1, 0)) })
+timer(0x33 * Delay, function () { concmd("+attack") })
+timer(0x34 * Delay, function () { concmd("-attack") })
+timer(0x35 * Delay, function () { owner():plySetAng(ang(90) * ang(0, 1, 0)) })
+timer(0x36 * Delay, function () { concmd("+attack") })
+timer(0x37 * Delay, function () { concmd("-attack") })
+
+# starboard control surface: spawn, apply fin3
+timer(0x40 * Delay, function () {
+    let P = propSpawn("models/sprops/rectangles_superthin/size_2/rect_12x36.mdl", Anchor + vec(28, -51, 0), ang(90) * ang(2, 0, 0), 1)
+    P:setColor(vec(0.9, 1.0, 0.9) * vec(200))
+    P:setMaterial(Material)
+    P:setMass(1 * MassUnit)
+    P:noCollideAll(1)
+    PropsTbl["ctrlsurf-starboard-0", entity] = P
+})
+timer(0x41 * Delay, function () { owner():plySetPos(Anchor + vec(21, -51, 24)) })
+timer(0x42 * Delay, function () { owner():plySetAng(ang(90) * ang(1, 1, 0)) })
+timer(0x43 * Delay, function () { concmd("+attack") })
+timer(0x44 * Delay, function () { concmd("-attack") })
+timer(0x45 * Delay, function () { owner():plySetAng(ang(90) * ang(0, 1, 0)) })
+timer(0x46 * Delay, function () { concmd("+attack") })
+timer(0x47 * Delay, function () { concmd("-attack") })
+
+# port vertical stabilizer: spawn, apply fin3
+timer(0x50 * Delay, function () {
+    let P = propSpawn("models/sprops/rectangles_superthin/size_2/rect_12x24.mdl", Anchor + vec(-10, -40, 12), ang(90) * ang(1, 0, 0), 1)
+    P:weld(RootProp, 0, 1)
+    P:setColor(vec(1.0, 0.9, 0.9) * vec(220))
+    P:setMaterial(Material)
+    P:setMass(1 * MassUnit)
+    P:noCollideAll(1)
+    PropsTbl["vstab-port-0", entity] = P
+})
+timer(0x51 * Delay, function () { owner():plySetPos(PropsTbl["vstab-port-0", entity]:pos() + vec(-10, 0, -64)) })
+timer(0x52 * Delay, function () { owner():plySetAng(ang(90) * ang(0, 0, 0)) })
+timer(0x53 * Delay, function () { concmd("+attack") })
+timer(0x54 * Delay, function () { concmd("-attack") })
+timer(0x55 * Delay, function () { owner():plySetAng(ang(90) * ang(0, 1, 0)) })
+timer(0x56 * Delay, function () { concmd("+attack") })
+timer(0x57 * Delay, function () { concmd("-attack") })
+
+# starboard vertical stabilizer: spawn, apply fin3
+timer(0x60 * Delay, function () {
+    let P = propSpawn("models/sprops/rectangles_superthin/size_2/rect_12x24.mdl", Anchor + vec(10, -40, 12), ang(90) * ang(-1, 0, 0), 1)
+    P:weld(RootProp, 0, 1)
+    P:setColor(vec(0.9, 1.0, 0.9) * vec(220))
+    P:setMaterial(Material)
+    P:setMass(1 * MassUnit)
+    P:noCollideAll(1)
+    PropsTbl["vstab-starboard-0", entity] = P
+})
+timer(0x61 * Delay, function () { owner():plySetPos(PropsTbl["vstab-starboard-0", entity]:pos() + vec(10, 0, -64)) })
+timer(0x62 * Delay, function () { owner():plySetAng(ang(90) * ang(0, 2, 0)) })
+timer(0x63 * Delay, function () { concmd("+attack") })
+timer(0x64 * Delay, function () { concmd("-attack") })
+timer(0x65 * Delay, function () { owner():plySetAng(ang(90) * ang(0, 1, 0)) })
+timer(0x66 * Delay, function () { concmd("+attack") })
+timer(0x67 * Delay, function () { concmd("-attack") })
+
+# internal ballast
+timer(0x70 * Delay, function () {
+    let P = propSpawn("models/sprops/rectangles/size_1_5/rect_6x12x3.mdl", PropsTbl["structural-body-0", entity]:pos() + vec(0, 8, -2), PropsTbl["structural-body-0", entity]:angles(), 1)
+    P:propShadow(0)
+    P:enableDrag(0)
+    P:setColor(vec(0.5, 1.0, 0.5) * vec(220))
+    P:setMaterial(Material)
+    P:setMass(1 * MassUnit)
+    P:noCollideAll(1)
+    PropsTbl["structural-ballast-0", entity] = P 
+})
+
+# ply: reset
+timer(0x90 * Delay, function () { concmd("gmod_toolmode " + PlyLast["toolgun", string]) })
+timer(0x91 * Delay, function () { owner():plySetPos(PlyLast["wpos", vector])})
+timer(0x92 * Delay, function () { owner():plySetAng(PlyLast["wang", angle])})
+timer(0x93 * Delay, function () { owner():plyNoclip(0) })
+timer(0x95 * Delay, function () { owner():plyShadow(1) })
+
+#[
+function void table:makeFin(Queue:array) {
+    let Camber = This["fin-camber", number]
+    let Key = This["key", string]
+    let ToolOffset = This["tool-offset", vector]
+    let ToolAng = This["tool-ang", angle]
+    let MakeFinSteps = array(
+        function () { concmd("fin3_fintype standard") },
+        function () { concmd("fin3_camber " + Camber) },
+        function () { rsSetToolgun("fin3") },
+        function () { 
+            rsDbgPrint("makeFin", Key + ": camber = " + Camber + ", offset = " + ToolOffset + ", angle = " + ToolAng)
+            owner():plySetPos( GDT["ent", table][Key, entity]:pos() + ToolOffset ) 
+        },
+        function () { owner():plySetAng( ToolAng ) },
+        function () { concmd("+attack") },
+        function () { concmd("-attack") },
+        function () { owner():plySetPos( Origin["pos", vector] + vec(-100, -200, 0) )},   
+        function () { owner():plySetAng( ang(12.5, 90, 0) )},
+        function () { concmd("+attack") },
+        function () { concmd("-attack") }
+    )
+    foreach (_:number, V:function = MakeFinSteps) {
+        Queue:pushFunction(V)
+    }
+}
+]#
+
+event removed(Resetting:number) {
+    propDeleteAll()
+}

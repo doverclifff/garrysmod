@@ -1,0 +1,8 @@
+@name bin/poc/041726
+@inputs WL:wirelink
+@outputs 
+@persist
+@trigger none 
+@strict
+
+print(WL)

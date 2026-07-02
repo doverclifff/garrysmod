@@ -1,0 +1,41 @@
+@name lib/semver/v1/example
+@strict
+@persist [LibA LibB]:table
+#include "lib/semver/v1/library"
+SemVerSemVer:semVerAssertEq(newSemVer("lib/semver/v1/library", 1, 0, 0))
+
+local UTCNow = dateUTC()
+local UTCOffset = -7
+print("" + ((UTCNow["hour", number] + UTCOffset) % 24) + ":" + UTCNow["min", number] + ":" + UTCNow["sec", number] + " UTC" + UTCOffset:toString())
+
+
+local CompareAndPrint = function(LibA:table, LibB:table) {
+    print(LibA:semVerGetString())
+    print(LibB:semVerGetString())
+    print(LibA:semVerEq(LibB) ? "LibA == LibB" : "LibA != LibB")
+    print(LibA:semVerGt(LibB) ? "LibA > LibB" : "LibA =< LibB")
+    return
+}
+
+local LibraryName = "ExampleLib"
+local LibA = newSemVer(LibraryName, 0, 1, 0)
+local LibB = newSemVer(LibraryName, 1, 1, 1)
+
+print("---- 1 ----")
+print(LibA:semVerGetString())
+print(LibB:semVerGetString())
+print("---- 2 ----")
+LibA = LibA:semVerSetPatch(1) # 0.1.0 -> 0.1.1
+CompareAndPrint(LibA, LibB)
+print("---- 3 ----")
+LibA = LibA:semVerSetMajor(1) # 0.1.1 -> 1.0.0
+CompareAndPrint(LibA, LibB)
+print("---- 4 ----")
+LibA = LibA:semVerSetMinor(1) # 1.0.0 -> 1.1.0
+CompareAndPrint(LibA, LibB)
+print("---- 5 ----")
+LibA = LibA:semVerSetPatch(1) # 1.1.0 -> 1.1.1
+CompareAndPrint(LibA, LibB)
+print("---- 6 ----")
+LibA = newSemVer(LibraryName:sub(4), 1, 1, 1)
+CompareAndPrint(LibA, LibB)

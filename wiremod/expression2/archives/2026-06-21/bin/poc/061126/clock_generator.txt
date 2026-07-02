@@ -1,0 +1,136 @@
+@name bin/poc/061126/clock_generator
+@model models/expression 2/cpu_microchip_mini.mdl
+# Enable pin
+@inputs Enable:number
+# Base clock frequency in Hertz (Hz).
+@inputs Frequency:number
+# Clock multiplier.
+@inputs Multiplier:number
+# Pulse-width in ticks.
+@inputs Pulsewidth:number
+
+# Reset interrupt.
+@inputs Reset:number
+
+# Actual clock frequency (Hz).
+@outputs ActualFrequency:number 
+
+# Ticks between clock cycles.
+@outputs TicksPerClock:number
+
+# Waveform generator outputs.
+@outputs Square:number Pulse:number
+
+@persist [LastEnableState]:number
+@persist [Colors]:table
+@persist [Reg]:array
+@trigger none 
+@strict
+
+function void applyAlignmentAndCosmetics() {
+    local E = entity()
+    E:setPos(round(E:pos(), 1))
+    E:setAng(E:toLocal(ang(0, 0, 0)))
+    E:setMaterial("phoenix_storms/grey_chrome")
+    E:setColor(255 * vec4(0.5, 0.5, 0.55, 1.0))
+    return
+}
+
+function void spawnHolograms(ColorOff:vector4) {
+    local E = entity()
+    local Ep = E:pos()
+    local Ea = entity():angles()
+    holoCreate(1, Ep + 0.1 * vec(-5, 8, 3.5), 0.01 * vec(7, 5, 2), Ea, ColorOff + vec4(0, 0, 0, 255))
+    holoCreate(2, Ep + 0.1 * vec(5, 8, 3.5), 0.01 * vec(7, 5, 2), Ea, ColorOff + vec4(0, 0, 0, 255))
+    holoCreate(3, Ep + 0.1 * vec(-8, 0, 3.5), 0.01 * vec(5, 3, 2), Ea, ColorOff + vec4(0, 0, 0, 255))
+    for (IDX=1, 3, 1) {
+        holoShadow(IDX, 0)
+        holoParent(IDX, E)
+    }
+    return
+}
+
+applyAlignmentAndCosmetics()
+
+Colors = table(
+    "hi" = vec4(208, 208, 200, 255),
+    "lo" = vec4(32, 32, 48, 255)
+)
+
+spawnHolograms(Colors["lo", vector4])
+
+LastEnableState = -1
+
+# Create 8-slot register file.
+Reg = array(
+    0, 0, 0, 0, 
+    0, 0, 0, 0
+)
+
+# Register file mapping
+# 1: square waveform generator state (mirrored to output)
+# 2: pulse waveform generator state (mirrored to output)
+# 3: pulse waveform pulse-width in ticks
+
+# 4-6: unused
+# 7: tick accumulator
+# 8: ticks per clock
+
+function void array:updateClockStateOnTick() {
+    This[3, number] = int(Pulsewidth)
+    This[8, number] = 1 + ceil(int(1 / _TICKINTERVAL) / (max(1, Multiplier) * max(1, Frequency)), 0)
+    if ( This[7, number] < This[8, number] ) {
+        # This branch is taken n-1 ticks per clock cycle:
+        
+        # Increment the tick accumulator:
+        This[7, number] = This[7, number] + 1
+        
+        # No-op IFF this is tick 1 or 2 of the current cycle. 1 -> 1
+        # Else, generate a falling-edge in the pulse waveform state: 1 -> 0
+        local LastPulse = This[2, number]
+        This[2, number] = This[2, number] & ( This[7, number] <= This[3, number] )
+        if ( This[2, number] != LastPulse ) {
+            holoColor(2, This[2, number] * Colors["hi", vector4] + !This[2, number] * Colors["lo", vector4] + vec4(0, 0, 0, 255))
+        }
+    } else {
+        # This branch is taken 1 time per clock cycle:
+        # Reset the tick accumulator:
+        This[7, number] = 0
+        
+        # Invert the square waveform state: 1 -> 0 -> 1
+        This[1, number] = !This[1, number]
+        Square = This[1, number]
+        holoColor(1, Square * Colors["hi", vector4] + !Square * Colors["lo", vector4] + vec4(0, 0, 0, 255))
+        
+        # Generate a rising-edge in the pulse waveform state: 0 -> 1
+        This[2, number] = This[1, number]
+        Pulse = This[2, number]
+        holoColor(2, Pulse * Colors["hi", vector4] + !Pulse * Colors["lo", vector4] + vec4(0, 0, 0, 255))
+    }
+    return
+}
+
+event tick() {
+    # Poll reset interrupt:
+    if ( Reset ) {
+        reset()
+    }
+    if ( Enable != LastEnableState ) {
+        holoColor(3, Enable * Colors["hi", vector4] + !Enable * Colors["lo", vector4] + vec4(0, 0, 0, 255))
+    }
+    if ( Enable ) {
+        Reg:updateClockStateOnTick()
+    }
+    LastEnableState = Enable
+}
+
+# Reset on use
+#event playerUse(Player:entity, Entity:entity) {
+#    if ( Player == owner() & Entity == entity() ) {
+#        reset()
+#    }   
+#}
+
+event removed(Resetting:number) {
+    holoDeleteAll()   
+}

@@ -1,0 +1,18 @@
+@name bin/poc/061826/nocollide
+@inputs 
+@outputs 
+@persist 
+@trigger none 
+@strict
+
+findByModel("models/sprops/rectangles_superthin/size_2/rect_12x54.mdl")
+findAllowPlayerProps(owner())
+FoundProps = findToArray()
+assert(FoundProps:count() != 0)
+print("nocollide: found " + FoundProps:count() + " props.")
+foreach(_:number, V:entity = FoundProps) {
+    #V:noCollideAll(1)
+    V:propFreeze(1)
+}
+
+selfDestruct()

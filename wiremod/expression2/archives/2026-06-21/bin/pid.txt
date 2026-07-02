@@ -1,0 +1,244 @@
+@name pid
+@model models/sprops/rectangles_superthin/size_1_5/rect_6x6.mdl
+
+@trigger none
+@strict
+
+@outputs RgBuf:table
+@outputs [PreERPM PostERPM PreSRPM PostSRPM]:number
+@outputs [ERPMSqrtError SRPMSqrtError]:number
+@outputs [ERPM_E ERPM_P ERPM_D SRPM_E SRPM_P SRPM_D]:number
+@outputs [CtlThrottle CtlClutch]:number
+
+#[ BEGIN PERSISTS ]#
+# START NUMBER CONSTANTS:
+# Internal:
+@persist [TimerDelay]:number
+# Physics:
+@persist [SpindleFrictionCoef SpindleMassKg BaseMassKg]:number
+# Control:
+@persist [CtlThrottlePIDGain CtlClutchPIDGain]:number
+# END NUMBER CONSTANTS.
+
+# START NUMBERS:
+# Internal:
+@persist [Status]:number
+# Control:
+@persist [CtlTgtERPM CtlTgtSRPM CtlTrimSRPM CtlThrottle CtlClutch]:number
+# END NUMBERS.
+
+# START ENTITIES:
+# ACF:
+@persist [BaseProp SpindleProp]:entity
+# Propcore:
+@persist [Engine Gearbox FuelTank]:entity
+# END ENTITIES.
+
+# START MEMORY:
+# Ring buffer:
+@persist [RgBuf]:table
+@persist [RgBufSz RgBufPtr]:number
+# END MEMORY.
+
+#[ END PERSISTS ]#
+
+#[ BEGIN FUNCTION DEFINITIONS ]#
+function array findACFComponentsOrFail(Nearest:vector) {
+    findIncludePlayerProps(owner())
+    findByClass("acf_engine")
+    Engine = findClosest(Nearest)
+    findByClass("acf_gearbox")
+    Gearbox = findClosest(Nearest)
+    findByClass("acf_fueltank")
+    FuelTank = findClosest(Nearest)
+    assert(Engine & Gearbox & FuelTank, "Failed to find one or all of: ACF engine, gearbox, fuel tank entity.")
+    return array(Engine, Gearbox, FuelTank)
+}
+
+function void initRegisters() {
+    # START INTERNAL:
+    Status = 0
+    TimerDelay = 12 * _TICKINTERVAL
+    # END INTERNAL.
+
+    # START PHYSICS:
+    BaseMassKg = 1.0 * 10 ^ 5
+    SpindleFrictionCoef = 1.0 * 10 ^ 0
+    SpindleMassKg = 1.0 * 10 ^ 3
+    # END PHYSICS.
+
+    # START ENGINE:
+    # Throttle position
+    CtlThrottle = 0
+    
+    # RPM target
+    CtlTgtERPM = 440
+
+    # RPM sensor trim
+    # Engine RPM samples are multiplied by this value.
+    # f(n) = trim * n
+    # where trim is a float, usually = 1.0
+    CtlTrimERPM = 1.2
+    # END ENGINE.
+
+    # START SPINDLE:
+    # RPM target
+    CtlTgtSRPM = CtlTgtERPM
+
+    # RPM sensor trim
+    # Spindle RPM samples are multiplied by this value.
+    # f(n) = trim * n
+    # where trim is a float, usually = 1.0
+    CtlTrimSRPM = 1.0 
+    # END SPINDLE.
+
+    # START CLUTCH:
+    # Disengagement (%):
+    CtlClutch = 1.0
+    # END CLUTCH.
+
+    # START RING BUFFER:
+    RgBuf = table()
+    RgBufPtr = 1
+    RgBufSz = 16
+    RgBuf["throttle", array] = array()
+    RgBuf["clutch", array] = array()
+    RgBuf["erpm", array] = array()
+    RgBuf["srpm", array] = array()
+    RgBuf["erpm_e", array] = array()
+    RgBuf["erpm_p", array] = array()
+    RgBuf["erpm_d", array] = array()
+    RgBuf["srpm_e", array] = array()
+    RgBuf["srpm_p", array] = array()
+    RgBuf["srpm_d", array] = array()
+    # END RING BUFFER.
+
+    # START PID CONTROLLERS:
+    CtlThrottlePIDGain = 0.4
+    CtlClutchPIDGain = 0.6
+    # END PID CONTROLLERS.
+
+    return
+}
+
+function void initPhysics() {
+    if ( Status != 0 ) {
+        return
+    }
+    local Origin = entity():pos() + vec(0, -4, 8)
+    local ACFEntities = findACFComponentsOrFail(Origin)
+    Engine = ACFEntities[1, entity]
+    Gearbox = ACFEntities[2, entity]
+    FuelTank = ACFEntities[3, entity]
+    timer(1 * TimerDelay, function () {
+        BaseProp = propSpawn("models/sprops/misc/sq_holes/t_sqhole_d3_18.mdl", Origin + vec(0, -8, 0), ang(0), 1)
+        BaseProp:setMass(BaseMassKg)
+        BaseProp:propStatic(1)
+        BaseProp:propNotSolid(1)
+        BaseProp:setColor(vec4(255, 255, 255, 0.75 * 255))
+    })
+    timer(2 * TimerDelay, function () {
+        SpindleProp = propSpawn("models/sprops/geometry/fdisc_12.mdl", Origin + vec(0, -8, 0), ang(0), 1)
+        SpindleProp:noCollideAll(1)
+        SpindleProp:setMass(SpindleMassKg)
+        axis(SpindleProp, vec(0), BaseProp, vec(0), SpindleFrictionCoef, vec(0, 1, 0))
+    })
+    timer(3 * TimerDelay, function () {
+        Engine:propFreeze(1)
+        Gearbox:propFreeze(1)
+        FuelTank:propFreeze(1)
+        Engine:setPos(Origin + vec(0, 6, 0))
+        Engine:setAng(ang(0, 90, 0))
+        Gearbox:setPos(Origin + vec(0, -2, 0))
+        Gearbox:setAng(ang(0, 180, 0))
+        FuelTank:setPos(Origin + vec(0, 16, 0))
+        FuelTank:setAng(ang(0, 0, 90))
+        Engine:acfLinkTo(Gearbox, 1)
+        Engine:acfLinkTo(FuelTank, 1)
+        Gearbox:acfLinkTo(SpindleProp, 1)
+    })
+    timer(4 * TimerDelay, function () {
+        Engine:acfThrottle(0)
+        Gearbox:acfClutch(1)
+        FuelTank:acfActive(1)
+        Engine:acfActive(1)
+    })
+    timer(5 * TimerDelay, function () {
+        Status = 1
+    })
+    return
+}
+#[ END FUNCTION DEFINITIONS ]#
+
+#[ BEGIN INIT ]#
+initRegisters()
+initPhysics()
+#[ END INIT ]#
+
+#[ BEGIN EVENT HANDLERS ]#
+event tick() {
+    if (Status == 1) {
+        if ( SpindleProp:isFrozen() ) {
+            CtlThrottle = 0.0
+            CtlClutch = 1.0
+            Engine:acfThrottle(CtlThrottle)
+            Gearbox:acfClutch(CtlClutch)
+        } else {
+            #[ START SAMPLING ]#
+            # ERPM: Engine revolutions per minute
+            PreERPM = Engine:acfRPM()
+            PostERPM = CtlTrimERPM * PreERPM
+            # SRPM: Spindle revolutions per minute
+            #PreSRPM = 60 * (SpindleProp:angVel():yaw() / 360)
+            PreSRPM = -1 * 60 * (SpindleProp:angVelVector():y() / 360)
+            PostSRPM = CtlTrimSRPM * PreSRPM
+
+            #[ END SAMPLING ]#
+
+            #[ BEGIN PROCESSING ]#
+            ERPM_E = CtlTgtERPM - PostERPM
+            ERPM_P = min(1.0, max(-1.0, ERPM_E / CtlTgtERPM))
+            #ERPM_D = -1 + RgBuf["erpm_e", array][RgBufPtr, number] / max(1.0, RgBuf["erpm_e", array][(RgBufPtr + RgBufSz >> 1) % RgBufSz + 1, number])
+            ERPM_D = min(10.0, max(-10.0, RgBuf["erpm_e", array][RgBufSz + -1 * RgBufPtr + -1, number] - RgBuf["erpm_e", array][RgBufPtr, number]))
+            
+            SRPM_E = CtlTgtSRPM - PostSRPM
+            SRPM_P = min(1.0, max(-1.0, SRPM_E / CtlTgtSRPM))
+            #SRPM_D = -1 + RgBuf["srpm_e", array][RgBufPtr, number] / max(1.0, RgBuf["srpm_e", array][(RgBufPtr + RgBufSz >> 1) % RgBufSz + 1, number])
+            SRPM_D = min(10.0, max(-10.0, RgBuf["srpm_e", array][RgBufSz + -1 * RgBufPtr + -1, number] - RgBuf["srpm_e", array][RgBufPtr, number]))
+            
+            CtlClutch = min(1.0, max(0.0, 1.0 * CtlClutch + 0.5 * CtlClutchPIDGain * (-1 * SRPM_P) + 0.5 * CtlThrottlePIDGain * ERPM_P))
+            CtlThrottle = min(100.0, max(0.0, 1.0 * CtlThrottle + CtlThrottlePIDGain * ERPM_P))
+            #[ END PROCESSING ]#
+
+            #[ BEGIN WRITEBACK ]#
+            Engine:acfThrottle(CtlThrottle)
+            Gearbox:acfClutch(CtlClutch)
+            
+            RgBuf["throttle", array][RgBufPtr, number] = CtlThrottle
+            RgBuf["clutch", array][RgBufPtr, number] = CtlClutch
+            RgBuf["erpm", array][RgBufPtr, number] = PostERPM
+            RgBuf["srpm", array][RgBufPtr, number] = PostSRPM
+            RgBuf["erpm_e", array][RgBufPtr, number] = ERPM_E
+            RgBuf["erpm_p", array][RgBufPtr, number] = ERPM_P
+            RgBuf["erpm_d", array][RgBufPtr, number] = ERPM_D
+            RgBuf["srpm_e", array][RgBufPtr, number] = SRPM_E
+            RgBuf["srpm_p", array][RgBufPtr, number] = SRPM_P
+            RgBuf["srpm_d", array][RgBufPtr, number] = SRPM_D
+            ERPMSqrtError = RgBuf["erpm_d", array]:average()
+            SRPMSqrtError = RgBuf["srpm_d", array]:average()
+            # Increment ring buffer index pointer
+            RgBufPtr = RgBufPtr % RgBufSz + 1 # [1, 2, 3, ..., RgBufSz+1)
+            #[ END WRITEBACK ]#
+        }
+    }
+}
+
+event removed(Resetting:number) {
+    propDeleteAll()
+    Engine:acfThrottle(0)
+    Engine:acfActive(0)
+    FuelTank:acfActive(0)
+    Gearbox:acfClutch(1)
+    Engine:acfUnlinkFrom(Gearbox, 1)
+    Engine:acfUnlinkFrom(FuelTank, 1)
+}

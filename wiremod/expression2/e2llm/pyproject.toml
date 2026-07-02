@@ -1,0 +1,14 @@
+[project]
+name = "e2llm"
+version = "0.1.0"
+description = "Experiments with E2 and generative AI"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = ["ollama>=0.6.2", "pydantic>=2.13.4"]
+
+[tool.pyright]
+venvPath = "."
+venv = "venv"
+
+[dependency-groups]
+dev = ["basedpyright>=1.39.8"]

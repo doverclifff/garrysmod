@@ -1,0 +1,140 @@
+@name bin/poc/061126/clock_divider
+@model models/expression 2/cpu_microchip_mini.mdl
+# Enable pin
+@inputs Enable:number
+# Clk pin
+@inputs Clk:number
+#
+@inputs Threshold:number
+# Pulse-width in ticks.
+@inputs Pulsewidth:number
+
+# Reset interrupt.
+@inputs Reset:number
+
+# Waveform generator outputs.
+@outputs Square:number Pulse:number
+
+@persist [LastClkState LastEnableState]:number
+@persist [Colors]:table
+@persist [Reg]:array
+@trigger none 
+@strict
+
+LastEnableState = 0
+LastClkState = 0
+
+Colors = table(
+    "hi" = vec4(208, 208, 200, 255),
+    "lo" = vec4(32, 32, 48, 255)
+)
+
+# Create 8-slot register file.
+Reg = array(
+    0, 0, 0, 0, 
+    0, 0, 0, 0
+)
+# register map
+# 1: tick accumulator
+# 2: threshold
+# 3: pulsewidth
+# 4-6: unused
+# 7: square waveform output
+# 8: pulse waveform output
+
+
+if (->Pulsewidth == 0) {
+    # Set default pulse generator pulse-width (2 ticks).
+    Pulsewidth = 2
+}
+
+
+if (->Threshold == 0) {
+    Threshold = 10   
+}
+
+
+function void applyAlignmentAndCosmetics() {
+    local E = entity()
+    E:setPos(round(E:pos(), 1))
+    E:setAng(E:toLocal(ang(0, 0, 0)))
+    E:setMaterial("phoenix_storms/grey_chrome")
+    E:setColor(255 * vec4(0.5, 0.5, 0.55, 1.0))
+    return
+}
+
+function void spawnHolograms() {
+    local E = entity()
+    local Ep = E:pos()
+    local Ea = entity():angles()
+    local C = Colors["lo", vector4]
+    holoCreate(1, Ep + 0.1 * vec(-5, 8, 3.5), 0.01 * vec(7, 5, 2), Ea, C + vec4(0, 0, 0, 255))
+    holoCreate(2, Ep + 0.1 * vec(5, 8, 3.5), 0.01 * vec(7, 5, 2), Ea, C + vec4(0, 0, 0, 255))
+    holoCreate(3, Ep + 0.1 * vec(5, -8, 3.5), 0.01 * vec(7, 5, 2), Ea, C + vec4(0, 0, 0, 255))
+    holoCreate(4, Ep + 0.1 * vec(-8, 0, 3.5), 0.01 * vec(5, 3, 2), Ea, C + vec4(0, 0, 0, 255))
+    for (IDX=1, 4, 1) {
+        holoShadow(IDX, 0)
+        holoParent(IDX, E)
+    }
+    return
+}
+
+applyAlignmentAndCosmetics()
+spawnHolograms()
+
+event tick() {
+    # Poll reset interrupt:
+    if ( Reset ) {
+        reset()
+    }
+    if ( Enable ) {
+        if ( Enable != LastEnableState ) {
+            holoColor(4, Colors["hi", vector4])
+        }
+        if ( Clk & Clk != LastClkState) {
+            Reg[3, number] = max(1, Pulsewidth)
+            Reg[2, number] = max(1, Threshold)
+            holoColor(3, Colors["hi", vector4])  
+            if ( Reg[1, number] >= Reg[2, number] ) {
+                Reg[1, number] = 0
+                Reg[7, number] = !Reg[7, number]
+                Square = Reg[7, number]
+                Reg[8, number] = 1 && Reg[7, number]
+                Pulse = Reg[8, number]
+                if ( Reg[7, number] ) {
+                    holoColor(1, Colors["hi", vector4])
+                } else {
+                    holoColor(1, Colors["lo", vector4])
+                }
+                if ( Reg[8, number] ) {
+                    holoColor(2, Colors["hi", vector4])
+                } else {
+                    holoColor(2, Colors["lo", vector4])
+                }
+            }
+            if ( Reg[1, number] >= Reg[3, number] ) {
+                Reg[8, number] = 0
+                Pulse = Reg[8, number]
+                holoColor(2, Colors["lo", vector4])
+            }
+            Reg[1, number] = Reg[1, number] + 1 
+        } elseif ( !Clk & Clk != LastClkState ) {
+            holoColor(3, Colors["lo", vector4])   
+        }
+    } elseif ( !Enable & Enable != LastEnableState ) {
+        holoColor(4, Colors["lo", vector4])
+    }
+    LastEnableState = Enable
+    LastClkState = Clk
+}
+
+# Reset on use
+#event playerUse(Player:entity, Entity:entity) {
+#    if ( Player == owner() & Entity == entity() ) {
+#        reset()
+#    }   
+#}
+
+event removed(Resetting:number) {
+    holoDeleteAll()   
+}

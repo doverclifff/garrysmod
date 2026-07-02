@@ -1,0 +1,344 @@
+@name lib/semver/v1/library
+@strict
+
+SEMVER_LIBRARY_NAME = "SemVer"
+SEMVER_VERSION_MAJOR = 1
+SEMVER_VERSION_MINOR = 1
+SEMVER_VERSION_PATCH = 0
+
+SEMVER_MIN_VERSION_MAJOR = 0
+SEMVER_MAX_VERSION_MAJOR = 2 ^ 16 - 1
+SEMVER_MIN_VERSION_MINOR = 0
+SEMVER_MAX_VERSION_MINOR = 2 ^ 16 - 1
+SEMVER_MIN_VERSION_PATCH = 0
+SEMVER_MAX_VERSION_PATCH = 2 ^ 16 - 1
+
+SEMVER_STRINGS = table(
+    "error_semver_internal_assertion" = "SemVer: internal assertion failure: ",
+    "error_version_not_equal" = "SemVer: Dependency versions are in-equivalent!",
+    "error_version_less_than" = "SemVer: Dependency version is less-than requirement",
+    "error_version_less_than_equal" = "SemVer: Dependency version is less-than or equal-to requirement",
+    "error_name_mismatch" = "SemVer: Dependency name mismatch!",
+    "error_sha1_mismatch" = "SemVer: Dependency SHA1 hash mismatch!"
+)
+
+SEMVER_TYPE_PROTOTYPE = table(
+    "name" = "null",
+    "major" = 0,
+    "minor" = 1,
+    "patch" = 0,
+    "build" = "",
+    "string" = "",
+    "generated" = table(),
+    "sha1" = ""
+)
+
+function string semVerPrivateNewAssertionError(Scope:string, Message:string) {
+    # Creates a new error string for internal assertion failures.
+    # Ex: "SemVer: internal assertion failure: semVerSetMajor: tried to set lesser value as major version number."
+    return SEMVER_STRINGS["error_semver_internal_assertion", string] + Scope + ": " + Message   
+}
+
+function string semVerPrivateNewErrorString(SemVerA:table, SemVerB:table, SemVerStringsKey:string) {
+    assert(
+        SEMVER_STRINGS:keys():indexOf(SemVerStringsKey), 
+        semVerPrivateNewAssertionError("semVerPrivateNewComparisonError", "argument SemVerStringsKey not in SEMVER_STRINGS:keys().")
+    )
+    let SVAString = SemVerA["string", string]
+    let SVBString = SemVerB["string", string]
+    return SEMVER_STRINGS[SemVerStringsKey, string]
+        + " Expected " + SVAString:left(SVAString:find("+")) + SVAString:right(8) 
+        + ", found " + SVBString:left(SVBString:find("+")) + SVBString:right(8)      
+}
+
+function string semVerNewErrorVersionNotEqual(SemVerA:table, SemVerB:table) {
+    return semVerPrivateNewErrorString(SemVerA, SemVerB, "error_version_not_equal")
+}
+
+function string semVerNewErrorVersionLessThan(SemVerA:table, SemVerB:table) {
+    return semVerPrivateNewErrorString(SemVerA, SemVerB, "error_version_less_than")
+}
+
+function string semVerNewErrorVersionLessThanEqual(SemVerA:table, SemVerB:table) {
+    return semVerPrivateNewErrorString(SemVerA, SemVerB, "error_version_less_than_equal")
+}
+
+
+function string semVerNewErrorNameMismatch(SemVerA:table, SemVerB:table) {
+    return semVerPrivateNewErrorString(SemVerA, SemVerB, "error_name_mismatch")  
+}
+
+function string semVerNewErrorSHA1Mismatch(SemVerA:table, SemVerB:table) {
+    return semVerPrivateNewErrorString(SemVerA, SemVerB, "error_sha1_mismatch")  
+}
+
+function table newSemVer(Name:string, Major:number, Minor:number, Patch:number, ...Args:array) {
+    # SemVer "object" constructor function.
+    assert(
+        SEMVER_MAX_VERSION_MAJOR >= Major >= SEMVER_MIN_VERSION_MAJOR, 
+        semVerPrivateNewAssertionError("newSemVer", "argument \"Major\" not in acceptable bounds.")
+    )
+    assert(
+        SEMVER_MAX_VERSION_MINOR >= Minor >= SEMVER_MIN_VERSION_MINOR, 
+        semVerPrivateNewAssertionError("newSemVer", "argument \"Minor\" not in acceptable bounds.")
+    )
+    assert(
+        SEMVER_MAX_VERSION_PATCH >= Patch >= SEMVER_MIN_VERSION_PATCH,
+        semVerPrivateNewAssertionError("newSemVer", "argument \"Patch\" not in acceptable bounds.")
+    )
+    let UTCNow = dateUTC()
+    
+    # By default, generate a build string as a weakly-unique idenitifier of the build:
+    let Build = ""
+    if ( Args:count() > 0 & Args[1, string]:length() > 0 ) {
+        # The build string can be optionally provided as the constructor's first optional argument.
+        Build = Args[1, string]
+    } else {
+        # Otherwise it is derived from the current UTC timestamp.
+        let AppendLeadingZeroIfLessThanTen = function(N:number) { 
+            return N < 10 ? "0" + N : N:toString() 
+        }
+        let YYYY = UTCNow["year", number]:toString()
+        let MM = AppendLeadingZeroIfLessThanTen(UTCNow["month", number])[string]
+        let DD = AppendLeadingZeroIfLessThanTen(UTCNow["day", number])[string]
+        let HH = AppendLeadingZeroIfLessThanTen(UTCNow["hour", number])[string]
+        let Mi = AppendLeadingZeroIfLessThanTen(UTCNow["min", number])[string]
+        let SS = AppendLeadingZeroIfLessThanTen(UTCNow["sec", number])[string]
+        let Ms = round(1000 * (curtime() % 1), 0):toString()
+        Build = YYYY + MM + DD + "." + HH + Mi + SS + Ms
+    }
+    
+    # Start to assemble the "fully-qualified" version string:
+    # Ex: MyNameLib:0.1.0
+    let SemiQualifiedString = Name + ":" + Major + "." + Minor + "." + Patch
+
+    # Derive a SHA1 hash from the "semi-qualified" version string:
+    let SHA1 = ""
+    if ( Args:count() > 1 & Args[2, string]:length() > 0 ) {
+        # The SHA1 hash string can be optionally provided as the constructor's second optional argument.
+        # This is intended for debugging uses only.
+        SHA1 = Args[2, string]
+    } else {
+        SHA1 = hashSHA1(SemiQualifiedString)
+    }
+    
+    # Finish assembling the fully-qualified version string:
+    # Ex: MyNameLib:0.1.0+sha1.abcd0123
+    FullyQualifiedString = SemiQualifiedString + "+sha1." + SHA1
+
+    # Copy computed values into new SemVer object and return:
+    let NewSemVer = SEMVER_TYPE_PROTOTYPE:clone()
+    NewSemVer["name", string] = Name
+    NewSemVer["major", number] = Major
+    NewSemVer["minor", number] = Minor
+    NewSemVer["patch", number] = Patch
+    NewSemVer["build", string] = Build
+    NewSemVer["string", string] = FullyQualifiedString
+    NewSemVer["generated-at", table] = UTCNow
+    NewSemVer["sha1", string] = SHA1
+    return NewSemVer
+}
+
+function string table:semVerGetName() {
+    return This["name", string]
+}
+
+function number table:semVerGetMajor() {
+    return This["major", number]
+}
+
+function table table:semVerSetMajor(NewMajor:number) {
+    assert(
+        NewMajor > This:semVerGetMajor(), 
+        semVerPrivateNewAssertionError("semVerSetMajor", "tried to set lesser value as major version number.")
+    )
+    assert(
+        SEMVER_MAX_VERSION_MAJOR >= NewMajor >= SEMVER_MIN_VERSION_MAJOR, 
+        semVerPrivateNewAssertionError("semVerSetMajor", "tried to set out-of-bounds value as major version number.")
+    )
+    #[ from semver.org: "8. [...] Patch and minor versions MUST be reset to 0 when major version is incremented." ]#
+    return newSemVer(This["name", string], NewMajor, 0, 0)
+}
+
+function number table:semVerGetMinor() {
+    return This["minor", number]
+}
+
+function table table:semVerSetMinor(NewMinor:number) {
+    assert(
+        NewMinor > This:semVerGetMinor(),
+        semVerPrivateNewAssertionError("semVerSetMinor", "tried to set lesser value as minor version number.")
+    )
+    assert(
+        SEMVER_MAX_VERSION_MINOR >= NewMinor >= SEMVER_MIN_VERSION_MINOR,
+        semVerPrivateNewAssertionError("semVerSetMinor", "tried to set out-of-bounds value as minor version number.")
+    )
+    #[ from semver.org: "7. [...] Patch version MUST be reset to 0 when minor version is incremented." ]#
+    return newSemVer(This["name", string], This["major", number], NewMinor, 0)
+}
+
+function number table:semVerGetPatch() {
+    return This["patch", number]
+}
+
+function table table:semVerSetPatch(NewPatch:number) {
+    assert(
+        NewPatch > This:semVerGetPatch(), 
+        semVerPrivateNewAssertionError("semVerSetPatch", "tried to set lesser value as patch version number.")
+    )
+    assert(
+        SEMVER_MAX_VERSION_PATCH >= NewPatch >= SEMVER_MIN_VERSION_PATCH,
+        semVerPrivateNewAssertionError("semVerSetMinor", "tried to set out-of-bounds value as patch version number.")
+    )
+    return newSemVer(This["name", string], This["major", number], This["minor", number], NewPatch)
+}
+
+function string table:semVerGetBuild() {
+    return This["build", string]
+}
+
+function string table:semVerGetString() {
+    return This["string", string]
+}
+
+function table table:semVerGetGenerationUTC() {
+    return This["generated-at", table]
+}
+
+function string table:semVerGetSHA1() {
+    return This["sha1", string]
+}
+
+function number table:semVerEq(SemVerB:table) {
+    # Returns 1 when the version of SemVerA is equivalent to SemVerB (object).
+    # All other cases, returns 0.
+    let SemVerA = This
+    let AName = SemVerA:semVerGetName()
+    let BName = SemVerB:semVerGetName()
+    let AMaj = SemVerA:semVerGetMajor()
+    let AMin = SemVerA:semVerGetMinor()
+    let APat = SemVerA:semVerGetPatch()
+    let BMaj = SemVerB:semVerGetMajor()
+    let BMin = SemVerB:semVerGetMinor()
+    let BPat = SemVerB:semVerGetPatch()
+    if ( AName == BName & AMaj == BMaj & AMin == BMin & APat == BPat ) {
+        return 1
+    }
+    return 0
+}
+
+function number table:semVerEq(Name:string, Major:number, Minor:number, Patch:number) {
+    # Returns 1 when the version of SemVerA is equivalent to a "fake" SemVerB
+    # with the given name, major, minor, and patch version.
+    # All other cases, returns 0.
+    let PhoneySemVer = newSemVer(Name, Major, Minor, Patch)
+    return This:semVerEq(PhoneySemVer)
+}
+
+function number table:semVerSHA1Eq(SemVerB:table) {
+    # Returns 1 when SemVerA and SemVerB's stored hashes are equivalent.
+    # All other cases, returns 0.
+    return This:semVerGetSHA1() == SemVerB:semVerGetSHA1()
+}
+
+function number table:semVerSHA1Eq(Hash:string) {
+    # Returns 1 when the argument Hash is equivalent to SemVerA's stored hash.
+    # All other cases, returns 0.
+    return This:semVerGetSHA1() == Hash
+}
+
+function number table:semVerGt(SemVerB:table) {
+    # Returns 1 when the version of SemVerA is greater-than SemVerB (object).
+    # All other cases, returns 0.
+    let AMaj = This:semVerGetMajor()
+    let AMin = This:semVerGetMinor()
+    let APat = This:semVerGetPatch()
+    let BMaj = SemVerB:semVerGetMajor()
+    let BMin = SemVerB:semVerGetMinor()
+    let BPat = SemVerB:semVerGetPatch()
+    if ( AMaj > BMaj ) {
+        # Greater major version case
+        return 1
+    } elseif ( AMaj == BMaj & AMin > BMin ) {
+        # Greater minor version case
+        return 1
+    } elseif ( AMaj == BMaj & AMin == BMin & APat > BPat ) {
+        # Greater patch version case
+        return 1        
+    }
+    # All other cases (version is lesser or equivalent)
+    return 0     
+}
+
+function number table:semVerGte(SemVerB:table) {
+    # Returns 1 when the version of SemVerA is greater-than or equal-to SemVerB (object).
+    # All other cases, returns 0.
+    return This:semVerGt(SemVerB) | This:semVerEq(SemVerB)
+}
+
+function number table:semVerAssertGte(Name:string, Major:number, Minor:number, Patch:number) {
+    # Returns 1 when the version of SemVerA is greater-than or equal-to to a "fake" SemVerB
+    # with the given name, major, minor, and patch version.
+    # All other cases, raises an error.
+    let PhoneySemVer = newSemVer(Name, Major, Minor, Patch, "unknown")
+    if ( !This:semVerGte(PhoneySemVer) ) {
+        error(semVerNewErrorVersionLessThanEqual(This, PhoneySemVer))
+    }
+    return 1
+}
+
+function number table:semVerAssertEq(SemVerB:table) {
+    # Returns 1 when the version of SemVerA is equivalent to SemVerB (object).
+    # All other cases, raises an error.
+    if ( !This:semVerEq(SemVerB) ) {
+        error(semVerNewErrorVersionNotEqual(This, SemVerB))
+    }
+    return 1
+}
+
+function number table:semVerAssertEq(Name:string, Major:number, Minor:number, Patch:number) {
+    # Returns 1 when the version of SemVerA is equivalent to a "fake" SemVerB
+    # with the given name, major, minor, and patch version.
+    # All other cases, raises an error.
+    if ( !This:semVerEq(Name, Major, Minor, Patch) ) {
+        let PhoneySemVer = newSemVer(Name, Major, Minor, Patch, "unknown")
+        error(semVerNewErrorVersionNotEqual(This, PhoneySemVer))
+    }
+    return 1
+}
+
+function number table:semVerAssertSHA1Eq(SHA1Hash:string) {
+    # Returns 1 when the stored SHA1 hash of SemVerA is equivalent to a "fake" SemVerB with the hash SHA1Hash.
+    # All other cases, raises an error.
+    if ( !This:semVerSHA1Eq(SHA1Hash) ) {
+        let PhoneySemVer = newSemVer("unknown", 0, 1, 0, "unknown", SHA1Hash)
+        error(semVerNewErrorSHA1Mismatch(This, PhoneySemVer))
+    }
+    return 1   
+}
+
+function number table:semVerAssertGt(SemVerB:table) {
+    # Returns 1 when the version of SemVerA is greater-than SemVerB.
+    # All other cases, raises an error.
+    if ( !This:semVerGt(SemVerB) ) {
+        error(semVerNewErrorVersionLessThanEqual(This, SemVerB))
+    }
+    return 1
+}
+
+function number table:semVerAssertGte(SemVerB:table) {
+    # Returns 1 when the version of SemVerA is greater-than or equal-to SemVerB.
+    # All other cases, raises an error.
+    if ( !This:semVerGte(SemVerB) ) {
+        error(semVerNewErrorVersionLessThan(This, SemVerB))
+    }
+    return 1   
+}
+
+SEMVER_VERSION = newSemVer(
+    SEMVER_LIBRARY_NAME,
+    SEMVER_VERSION_MAJOR,
+    SEMVER_VERSION_MINOR,
+    SEMVER_VERSION_PATCH
+)
+_ = SEMVER_VERSION

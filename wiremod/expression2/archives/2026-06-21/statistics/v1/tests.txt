@@ -1,0 +1,7 @@
+@name lib/statistics/v1/tests
+@strict
+#include "lib/statistics/v1/library"
+
+local Arr = array(1, 1, 2, 2, 3, 5, 7, 9, 11, 13)
+assert(0.0001 >= 19.15555555555555 - Arr:variance() >= -0.0001)
+assert(0.0001 >= 4.376706016578627 - Arr:stddev() >= -0.0001)

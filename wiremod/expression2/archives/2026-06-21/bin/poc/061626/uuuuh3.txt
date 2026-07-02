@@ -1,0 +1,52 @@
+@name bin/poc/061626/uuuuh3
+@inputs DS:wirelink
+@outputs
+@persist [C V]:vector2
+@trigger none 
+@strict
+
+
+function wirelink:initScreen() {
+    This[1048574]=0 #Reset Screen and whatever was on it will be cleared.
+    This[1048569]=3 #Set color mode to 3
+    This[1048575]=1 #Apply changes
+    This[1048572]=256 #Set new resolution on Y (Height)
+    This[1048573]=256 #Set new resolution on X (Width)
+}
+ 
+function void wirelink:drawPixel(XY:vector2, Color:vector){
+    This[XY:x() + XY:y() * 256] = rgb2digi(Color,3)
+}
+
+function number wirelink:getPixel(XY:vector2) {
+    return This[XY:x() + XY:y() * 256]   
+}
+
+DS:initScreen()
+C = vec2(127, 127)
+V = 2 * vec2(3, 1)
+
+event tick() {
+    if ( timerExists("dsclk") == 0 ) {
+        timer("dsclk", 2 * _TICKINTERVAL, function () {
+            C = C + V
+            if ( C:x() > 255 ) {
+                C = vec2(255, C:y())
+                V = vec2(-V:x(), V:y())
+            } elseif ( C:x() < 0 ) {
+                C = vec2(0, C:y())
+                V = vec2(-V:x(), V:y())
+            }
+            if ( C:y() > 255 ) {
+                C = vec2(C:x(), 255)
+                V = vec2(V:x(), -V:y())
+            } elseif ( C:y() < 0 ) {
+                C = vec2(C:x(), 0)
+                V = vec2(V:x(), -V:y())
+            }
+            DS:drawPixel(C + vec2(-1, 0), vec(220, 0, 0))
+            DS:drawPixel(C, vec(0, 220, 0))
+            DS:drawPixel(C + vec2(1, 0), vec(0, 0, 255))
+        })
+    }
+}

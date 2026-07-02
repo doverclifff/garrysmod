@@ -1,0 +1,164 @@
+@name bin/poc/062126/conceptgct
+@trigger none
+@strict
+
+# docstrings (for user-defined functions):
+#
+# Expression 2 does not have a concept of docstrings, or machine-readable code documentation.
+# Having a standardized method of documenting user-defined functions would aid library developers
+# by unifying the way they document their function definitions. Machine-readable documentation
+# simplifies the use of this information in other development tooling.
+#
+# As a reminder, this is what a definition of a user-defined function (a "function definition")
+# looks like in Expression 2. This function takes two 'number' type arguments and returns a 'number', their sum.
+#
+# line | Expression 2 (E2) source code
+# -----+------------------------------
+#    1 | function number addAToB(A:number, B:number) {
+#    2 |     return A + B
+#    3 | }
+#
+# Here is the same function definition again, but with notes:
+#
+# line | Expression 2 (E2) source code                  | notes
+# -----+------------------------------------------------+------
+#    1 | function number addAToB(A:number, B:number) {  | line 1.a. all function definitions start with the keyword 'function'.
+#      |                                                | line 1.b. the function returns an object that is the 'number' type.
+#      |                                                | line 1.c. the function's name is 'addAToB'.
+#      |                                                | line 1.d. the function takes two arguments, 'A' and 'B'. their type is expected to be 'number'.
+#    2 |     return A + B                               | line 2.   the function adds 'A' and 'B' together with the 'add' operator '+'.
+#    3 | }                                              | line 3.   the closing bracket of the function definition is placed on its own line, at the same indentation level as the 'function' keyword.
+#
+# Let's define some requirements for writing docstrings for Expression 2 (E2) user-defined functions.
+#
+# line | E2 source code | Required? | Optional? | Requirement    | Definition of Requirement (DoR)
+# -----+----------------+-----------+-----------+----------------+--------------------------------
+#    0 |                | YES       | NO        | 0.             | All docstrings MUST be preceded by one blank/empty line.
+#    1 | # [@overload]  | NO        | YES       | 1.a.           | A tag MUST be included when two or more function definitions specify functions with identical names.
+#      |                |           |           | 1.b.           | This tag MUST NOT be included when the function name specified by the definition is unique to all other definitions.
+#    2 | # @name        | YES       | NO        | 2.             | A tag MUST be included that communicates the name specified by the function definition.
+#    3 | # @group       | YES       | NO        | 3.a.           | A tag MUST be included that communicates any conceptual groups the defined function is a member of.
+#      |                |           |           | 3.b.           | This tag MUST be included even when the function belongs to zero groups. 
+#    4 | # @description | YES       | NO        | 4.             | A tag MUST be included that briefly communicates the purpose and intended use of the function.
+#
+# With these requirements, a proper docstring for 'addAToB' would look like:
+#
+# line | Expression 2 (E2) source code                   
+# -----+------------------------------
+#    0 |
+#    1 | # @name addAToB
+#    2 | # @group Arithmetic, Helper
+#    3 | # @description Returns the sum of two numbers.
+#    4 | function number addAToB(A:number, B:number) {
+#    5 |     return A + B
+#    6 | }
+
+
+
+## -- Global Class Table (GCT) primitives --                      -- #
+
+function number newGCTMagicNumber() {
+    return 0x10100
+}
+
+function table newGlobalClassTable() {
+    return table(
+        "cls_names" = array(),
+        "cls_prototypes" = table(),
+        "magic" = newGCTMagicNumber()
+    )   
+}
+
+function array table:cloneGCTClassNamesR() {
+    return This["cls_names", array]:clone()
+}
+
+function table table:cloneGCTClassPrototypesT() {
+    return This["cls_prototypes", table]:clone()
+}
+
+function array table:getGCTClassNamesR() {
+    return This["cls_names", array]
+}
+
+function table table:getGCTClassPrototypesT() {
+    return This["cls_prototypes", table]
+}
+
+function number table:getGCTMagic() {
+    return This["magic", number]
+}
+
+function number table:indexOfGCTClassName(Name:string) {
+    return This:getGCTClassNamesR():indexOf(Name)
+}
+
+function void table:newGCTClassName(NewName:string) {
+    This:getGCTClassNamesR():pushString(NewName)
+}
+
+## -- end of section --                                           -- #
+
+## -- GCT validation helpers --                                   -- #
+
+function array getGCTClassStringCharacterBlacklist() {
+    return array(
+        " ", ",", ".", ";", ":", 
+        "'", "\"", "[", "]", "{", 
+        "}", "\\", "|", "+", "=", 
+        "!", "@", "#", "$", "%", 
+        "^", "&", "*", "(", ")", 
+        "`", "~"
+    )  
+}
+
+function number validateGCTClassExists(Class:string, GCT:table) {
+    assert( GCT:indexOfGCTClassName(Class) != 0, format("Class %s could not be found in the GCT %x", Class, GCT:id()) )
+    return 1   
+}
+
+function number validateGCTClassNotExists(Class:string, GCT:table) {
+    assert( GCT:indexOfGCTClassName(Class) == 0, format("Class %s already exists in the GCT %x", Class, GCT:id()) )  
+    return 1
+}
+
+function number validateGCTHasMagic(GCT:table) {
+    assert( GCT:keys():indexOf("_magic") != 0, format("GCT %x is malformed: missing magic", GCT:id()) )   
+    return 1
+}
+
+function number validateGCTHasValidMagic(GCT:table) {
+    let ThisMagic = GCT:getGCTMagic()
+    let ExpectedMagic = newGCTMagicNumber()
+    assert( GCT:getGCTMagic() == newGCTMagicNumber(), format("GCT %x is malformed: incorrect magic: %x is not equal to the expected value %x", GCT:id(), ThisMagic, ExpectedMagic) )
+    return 1
+}
+
+function number validateGCTClassStringNotContainsBlacklistedChars(S:string, CharacterBlacklist:array) {
+    assert( CharacterBlacklist:count() != 0, "Character blacklist is empty." )
+    foreach ( _:number, V:string = CharacterBlacklist ) {
+        assert( S:find(V) == 0, format("Class key string \"%s\" contains a forbidden character: %s", S, V) )
+    }
+    return 1
+}
+
+# @overload
+function number validateGCTClassStringNotContainsBlacklistedChars(S:string) {
+    return validateGCTClassStringNotContainsBlacklistedChars(S, getGCTClassStringCharacterBlacklist())
+}
+
+function number validateGCTClassStringNotContainsBlacklistedCharsMultiple(...Strings:array) {
+    let NewBlacklistCopyT = getGCTClassStringCharacterBlacklist()
+    foreach ( _:number, V:string = Strings ) {
+        _ = validateGCTClassStringNotContainsBlacklistedChars(V, NewBlacklistCopyT)
+    }
+    return 1
+}
+
+## -- end of section --                                           -- #
+
+
+# Global class table (GCT)
+GCT = newGlobalClassTable()
+_ = GCT
+

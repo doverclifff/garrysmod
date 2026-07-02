@@ -1,0 +1,19 @@
+@name bin/poc/053026 - Globals
+@inputs 
+@outputs Downlink:wirelink 
+@outputs [Anchor ChassisAnchor PowertrainAnchor FrontAxleAnchor RearAxleAnchor]:vector
+@outputs [FrontAxleWidth RearAxleWidth]:number
+@persist 
+@trigger none 
+@strict
+
+Downlink = wirelink()
+
+Anchor = entity():pos()   + vec(96,        0 ,     0)
+ChassisAnchor = Anchor    + vec(0 , 1.0 * -24,    12)
+PowertrainAnchor = Anchor + vec(0 ,-0.5 * 12 , 1 * 6)
+FrontAxleAnchor = Anchor  + vec(0 , 1.0 * 24 , 1 * 6)
+RearAxleAnchor = Anchor   + vec(0 ,-2.8 * 24 , 1 * 6)
+
+FrontAxleWidth = 24 * 2.5
+RearAxleWidth = 24 * 2.5

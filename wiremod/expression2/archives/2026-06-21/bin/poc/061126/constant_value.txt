@@ -1,0 +1,112 @@
+@name bin/poc/061126/constant_value
+@model models/expression 2/cpu_microchip_mini.mdl
+@outputs [A B C D]:number
+@inputs [Enable Reset]:number
+@persist [LastEnableState]:number
+@persist [Colors]:table
+@persist [Reg]:array
+@trigger none 
+@strict
+
+# Create 4-slot register file.
+Reg = array(
+    1, 2, 4, 16
+)
+
+Colors = table(
+    "hi" = vec4(208, 208, 200, 255),
+    "lo" = vec4(32, 32, 48, 255)
+)
+
+function void mirrorRegisterValues() {
+    A = Reg[1, number]
+    B = Reg[2, number]
+    C = Reg[3, number]
+    D = Reg[4, number] 
+}
+
+function void applyAlignmentAndCosmetics() {
+    local E = entity()
+    E:setPos(round(E:pos(), 1))
+    E:setAng(E:toLocal(ang(0, 0, 0)))
+    E:setMaterial("phoenix_storms/grey_chrome")
+    E:setColor(255 * vec4(0.5, 0.5, 0.55, 1.0))
+    return
+}
+
+function void spawnHolograms() {
+    local C_hi = Colors["hi", vector4]
+    local C_lo = Colors["lo", vector4]
+    local HoloColors = array(
+        min(1, ->A) * C_hi + !->A * C_lo,
+        min(1, ->B) * C_hi + !->B * C_lo,
+        min(1, ->C) * C_hi + !->C * C_lo,
+        min(1, ->D) * C_hi + !->D * C_lo,
+        Enable * C_hi + !Enable * C_lo
+    )
+    local E = entity()
+    local Ep = E:pos()
+    local Ea = E:angles()
+    holoCreate(1, Ep + 0.1 * vec(-7, 8, 3.5), 0.01 * vec(2, 5, 2), Ea, HoloColors[1, vector4])
+    holoCreate(2, Ep + 0.1 * vec(-3, 8, 3.5), 0.01 * vec(2, 5, 2), Ea, HoloColors[2, vector4])
+    holoCreate(3, Ep + 0.1 * vec(3, 8, 3.5), 0.01 * vec(2, 5, 2), Ea, HoloColors[3, vector4])
+    holoCreate(4, Ep + 0.1 * vec(7, 8, 3.5), 0.01 * vec(2, 5, 2), Ea, HoloColors[4, vector4])
+    holoCreate(5, Ep + 0.1 * vec(-8, 0, 3.5), 0.01 * vec(5, 3, 2), Ea, HoloColors[5, vector4])
+    for (IDX=1, 5, 1) {
+        holoShadow(IDX, 0)
+        holoParent(IDX, E)
+    }
+    return
+}
+
+#mirrorRegisterValues()
+applyAlignmentAndCosmetics()
+spawnHolograms()
+
+
+LastEnableState = -1
+event tick() {
+    # Poll reset interrupt:
+    if ( Reset ) {
+        reset()
+    }
+    if ( Enable ) {
+        if ( Enable != LastEnableState ) {
+            holoColor(5, Colors["hi", vector4])
+            local C_hi = Colors["hi", vector4]
+            local C_lo = Colors["lo", vector4]
+            local HoloColors = array(
+                min(1, ->A) * C_hi + !->A * C_lo,
+                min(1, ->B) * C_hi + !->B * C_lo,
+                min(1, ->C) * C_hi + !->C * C_lo,
+                min(1, ->D) * C_hi + !->D * C_lo
+            )
+            foreach(K:number, V:vector4 = HoloColors) {
+                holoColor(K, V)
+            }
+            mirrorRegisterValues()
+        }
+    } else {
+        if ( Enable != LastEnableState ) {
+            for (IDX=1, 5, 1) {
+                holoColor(IDX, Colors["lo", vector4])
+            }
+            A = 0
+            B = 0
+            C = 0
+            D = 0
+        }
+    }
+    LastEnableState = Enable 
+}
+
+# Reset on use
+#event playerUse(Player:entity, Entity:entity) {
+#    if ( Player == owner() & Entity == entity() ) {
+#        reset()
+#    }   
+#}
+
+event removed(Resetting:number) {
+    holoDeleteAll()   
+}

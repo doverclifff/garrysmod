@@ -1,0 +1,15 @@
+@name bin/poc/061826/rotate90
+@inputs 
+@outputs 
+@persist 
+@trigger none 
+@strict
+propSpawnEffect(0)
+local E = entity()
+local Ee = E:isWeldedTo()
+local Eee = propSpawn(Ee:model(), Ee:pos(), ang(0, 0, 0), 1)
+print("was: " + Ee:pos(), Ee:angles())
+Eee:setAng(ang(0, 0, 0))
+Eee:setPos(round(Eee:pos(), 0) + vec(21, -21, 0))
+print("now: " + Eee:pos(), Eee:angles())
+selfDestruct()

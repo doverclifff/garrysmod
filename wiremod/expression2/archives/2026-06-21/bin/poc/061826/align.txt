@@ -1,0 +1,21 @@
+@name bin/poc/061826/align
+@inputs 
+@outputs 
+@persist 
+@trigger none 
+@strict
+local E = entity()
+local Ee = E:isWeldedTo()
+print("was: " + Ee:pos(), Ee:angles())
+
+E:propFreeze(1)
+Ee:propFreeze(1)
+Ee:noCollideAll(1)
+#Ee:constraintBreak()
+#Ee:setAng(round(Ee:angles(), 0))
+#Ee:setAng(ang(0, 90, 0))
+#Ee:setPos(round(Ee:pos(), 0))
+#Ee:setPos(round(Ee:pos() + vec(12, 0, 0), 0))
+print("now: " + Ee:pos(), Ee:angles())
+
+selfDestruct()

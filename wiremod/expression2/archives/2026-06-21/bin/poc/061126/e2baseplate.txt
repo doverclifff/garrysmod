@@ -1,0 +1,50 @@
+@name bin/poc/061126/e2baseplate
+@model models/cheeze/wires/mini_chip.mdl
+@strict
+
+enableConstraintUndo(0)
+propSpawnUndo(0)
+propSpawnEffect(0)
+
+
+local E = entity()
+E:propFreeze(1)
+E:constraintBreak()
+E:setAng(E:toLocal(ang(0, 90, 0)))
+E:setPos(floor(E:pos(), 0))
+
+
+local Name     = "e2baseplate"
+local Model    = "models/sprops/rectangles_superthin/size_2/rect_12x12.mdl"
+local Spacing  = 12
+local Material = "sprops/sprops_grid_12x12"
+local Color    = vec4(230, 230, 220, 255)
+local Anchor   = entity():pos() + vec(0, 0, 24)
+
+function entity newBaseplate(Model:string, Material:string, Color:vector4, Anchor:vector, Offset:vector, Angle:angle, Name:string) {
+    Plate = propSpawn(Model, Anchor + Offset, Angle, 1)
+    Plate:setName(Name)
+    Plate:setColor(Color)
+    Plate:setMaterial(Material)
+    return Plate   
+}
+
+timer(1 * _TICKINTERVAL, function () {
+    local E = newBaseplate(Model, Material, Color + -1 * vec4(64, 64, 64, 0), Anchor, vec(0), ang(0), Name)
+    E:weld(world())
+})
+timer(10 * _TICKINTERVAL, function () {
+    local E = newBaseplate(Model, Material, Color, Anchor, vec(Spacing, 0, 0), ang(0), Name)
+    E:weld(world())
+})
+timer(20 * _TICKINTERVAL, function () {
+    local E = newBaseplate(Model, Material, Color, Anchor, vec(0, Spacing, 0), ang(0), Name)
+    E:weld(world())
+})
+timer(30 * _TICKINTERVAL, function () {
+    local E = newBaseplate(Model, Material, Color + -1 * vec4(64, 64, 64, 0), Anchor, vec(Spacing, Spacing, 0), ang(0), Name)
+    E:weld(world())
+})
+timer(40 * _TICKINTERVAL, function () {
+    E:setPos(Anchor + -1 * vec(4, 4, 0.5))  
+})

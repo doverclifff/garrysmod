@@ -1,0 +1,49 @@
+@name bin/poc/061326/carbody
+@inputs 
+@outputs 
+@persist GDT:table
+@trigger none 
+@strict
+
+enableConstraintUndo(0)
+propSpawnUndo(0)
+propSpawnEffect(0)
+
+GDT = table()
+
+local E = entity()
+E:propFreeze(1)
+E:constraintBreak()
+E:setAng(E:toLocal(ang(0, 90, 0)))
+E:setPos(floor(E:pos(), 0))
+
+
+local Name     = "e2baseplate"
+#local Model    = "models/sprops/rectangles_superthin/size_2/rect_12x12.mdl"
+#local Spacing  = 12
+local Material = "sprops/sprops_grid_12x12"
+local Color    = vec4(230, 230, 220, 220)
+local Anchor   = entity():pos() + vec(0, 0, 24)
+
+function entity newBaseplate(Model:string, Material:string, Color:vector4, Anchor:vector, Offset:vector, Angle:angle, Name:string) {
+    Plate = propSpawn(Model, Anchor + Offset, Angle, 1)
+    Plate:setName(Name)
+    Plate:setColor(Color)
+    Plate:setMaterial(Material)
+    return Plate   
+}
+
+timer(1 * _TICKINTERVAL, function () {
+    GDT["block_center", entity] = newBaseplate("models/sprops/cuboids/height12/size_3/cube_36x60x12.mdl", Material, Color + -1 * vec4(2 * 64, 64, 64, 0), Anchor, vec(0), ang(0, 90, 0), Name)
+    
+})
+#timer(10 * _TICKINTERVAL, function () {
+#    GDT["block_front", entity] = newBaseplate("models/sprops/cuboids/height12/size_3/cube_36x36x12.mdl", Material, Color + -1 * vec4(64, 2 * 64, 64, 0), Anchor + vec(0, 30, 0), vec(0), ang(0, 90, 0), Name)
+#    GDT["block_front", entity]:noCollide(GDT["block_center", entity])
+#    GDT["block_front", entity]:weld(GDT["block_center", entity])
+#})
+#timer(20 * _TICKINTERVAL, function () {
+#    GDT["block_rear", entity] = newBaseplate("models/sprops/cuboids/height12/size_3/cube_36x36x12.mdl", Material, Color + -1 * vec4(64, 64, 2 * 64, 0), Anchor + vec(0, -30, 0), vec(0), ang(0, 90, 0), Name)
+#    GDT["block_rear", entity]:noCollide(GDT["block_center", entity])
+#    GDT["block_rear", entity]:weld(GDT["block_center", entity])
+#})

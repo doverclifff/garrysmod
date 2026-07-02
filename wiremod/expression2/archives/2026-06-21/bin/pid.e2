@@ -1,0 +1,215 @@
+@name pid
+@trigger none 
+@strict
+
+#[ BEGIN PERSISTS ]#
+# START NUMBER CONSTANTS:
+# Internal:
+@persist [TimerDelay]:number
+# Physics:
+@persist [SpindleFrictionCoef SpindleMassKg BaseMassKg]:number
+# END NUMBER CONSTANTS.
+
+# START NUMBERS:
+# Internal:
+@persist [Status]:number
+# Control:
+@persist [CtlTgtERPM CtlTgtSRPM CtlTrimSRPM CtlClutch]:number
+# END NUMBERS.
+
+# START ENTITIES:
+# ACF:
+@persist [BaseProp SpindleProp]:entity
+# Propcore:
+@persist [Engine Gearbox FuelTank]:entity
+# END ENTITIES.
+
+# START MEMORY:
+# Ring buffer:
+@persist [RgBuf]:table
+@persist [RgBufSz RgBufPtr]:number
+# END MEMORY.
+#[ END PERSISTS ]#
+
+
+
+#[ START HELPER FUNCTIONS ]#
+function array findACFComponentsOrFail(Nearest:vector) {
+    findIncludePlayerProps(owner())
+    findByClass("acf_engine")
+    Engine = findClosest(Nearest)
+    findByClass("acf_gearbox")
+    Gearbox = findClosest(Nearest)
+    findByClass("acf_fueltank")
+    FuelTank = findClosest(Nearest)
+    assert(Engine & Gearbox & FuelTank, "Failed to find one or all of: ACF engine, gearbox, fuel tank entity.")
+    return array(Engine, Gearbox, FuelTank)
+}
+#[ END HELPER FUNCTIONS ]#
+
+#[ START INITIALIZATION FUNCTIONS ]#
+
+function void initRegisters() {
+    # START INTERNAL:
+Status = 0
+TimerDelay = 12 * _TICKINTERVAL
+# END INTERNAL.
+
+# START PHYSICS:
+BaseMassKg = 1.0 * 10 ^ 5
+SpindleFrictionCoef = 1.0 * 10 ^ 0
+SpindleMassKg = 1.0 * 10 ^ 3
+# END PHYSICS.
+
+# START ENGINE:
+# RPM target
+CtlTgtERPM = 440
+
+# RPM sensor trim
+# Engine RPM samples are multiplied by this value.
+# f(n) = trim * n
+# where trim is a float, usually = 1.0
+CtlTrimERPM = 1.0 
+# END ENGINE.
+
+# START SPINDLE:
+# RPM target
+CtlTgtSRPM = CtlTgtERPM
+
+# RPM sensor trim
+# Spindle RPM samples are multiplied by this value.
+# f(n) = trim * n
+# where trim is a float, usually = 1.0
+CtlTrimSRPM = 1.0 
+# END SPINDLE.
+
+# START CLUTCH:
+# Disengagement (%):
+CtlClutch = 1.0
+# END CLUTCH.
+
+# START RING BUFFER:
+RgBuf = table()
+RgBufPtr = 1
+RgBufSz = 5
+RgBuf["erpm", array] = array()
+RgBuf["srpm", array] = array()
+RgBuf["rpm_error", array] = array()
+# END RING BUFFER.
+}
+
+function void initPhysics() {
+    if ( Status != 0 ) {
+        return
+    }
+    local Origin = entity():pos() + vec(0, 0, 18)
+    local ACFEntities = findACFComponentsOrFail(Origin)
+    Engine = ACFEntities[1, entity]
+    Gearbox = ACFEntities[2, entity]
+    FuelTank = ACFEntities[3, entity]
+    
+    timer(1 * TimerDelay, function () {
+        BaseProp = propSpawn("models/sprops/misc/axis_plane.mdl", Origin + vec(0, -8, 0), ang(0), 1)
+        BaseProp:setMass(BaseMassKg)
+        BaseProp:propStatic(1)
+        BaseProp:propNotSolid(1)
+        BaseProp:setColor(vec4(255, 255, 255, 0.75 * 255))
+    })
+    timer(2 * TimerDelay, function () {
+        SpindleProp = propSpawn("models/sprops/geometry/fring_12.mdl", Origin + vec(0, -8, 0), ang(0), 1)
+        SpindleProp:setMass(SpindleMassKg)
+        axis(SpindleProp, vec(0), BaseProp, vec(0, 0, 18), SpindleFrictionCoef, vec(0, 1, 0))
+    })
+    timer(3 * TimerDelay, function () {
+        Engine:propFreeze(1)
+        Gearbox:propFreeze(1)
+        FuelTank:propFreeze(1)
+        Engine:setPos(Origin + vec(0, 6, 0))
+        Engine:setAng(ang(0, 90, 0))
+        Gearbox:setPos(Origin + vec(0, -2, 0))
+        Gearbox:setAng(ang(0, 180, 0))
+        FuelTank:setPos(Origin + vec(0, 6, -8))
+        FuelTank:setAng(ang(0, 0, 0))
+        Engine:acfLinkTo(Gearbox, 1)
+        Engine:acfLinkTo(FuelTank, 1)
+        Gearbox:acfLinkTo(SpindleProp, 1)    
+    })
+    timer(4 * TimerDelay, function () {
+        FuelTank:acfActive(1)
+        Engine:acfActive(1)
+    })
+    timer(5 * TimerDelay, function () {
+        Status = 1
+    })
+    return
+}
+initPhysics()
+
+event tick() {
+    if (Status == 1) {
+        if ( !SpindleProp:isFrozen() ) {
+
+            #[ START SAMPLING ]#
+            # ERPM: Engine revolutions per minute
+            local RawERPM = Engine:acfRPM()
+            RgBuf["erpm", array][RgBufPtr, number] = CtlTrimERPM * RawERPM
+            # SRPM: Spindle revolutions per minute
+            local RawSRPM = -1 * SpindleProp:angVelVector():y()
+            RgBuf["srpm", array][RgBufPtr, number] = -1 * CtlTrimSRPM * RawSRPM
+            # ETP: Engine throttle position
+            local RawETP = Engine:acfThrottle()
+            RgBuf["etp", array][RgBufPtr, number] = RawETP
+            #[ END SAMPLING ]#
+
+            #[ BEGIN PROCESSING ]#
+            
+            
+            # Increment ring buffer pointer
+            RgBufPtr = RgBufPtr % RgBufSz + 1 # [1, 2, 3, ..., RgBufSz+1)
+            
+            #[ END PROCESSING ]#
+            
+            #[ BEGIN WRITEBACK ]#
+            
+            #[ END WRITEBACK ]#
+            #[
+            # Take unweighted mean of all ERPM/SRPM ring buffer values:
+            # local PostProcessERPM = RgBuf["erpm", array]:average()
+            # local PostProcessSRPM = RgBuf["srpm", array]:average()
+            
+            # --> error = target - sample
+            # error == 0 when target == sample ; no error 
+            # error > 0 when target > sample   ; sample under-shot
+            # error < 0 when target < sample   ; sample over-shoot
+            local ERPMError = CtlTgtERPM - ComputedERPM
+            # 
+            local ERPMErrorProportion = max(-1.0, min(1.0, ERPMError / CtlTgtERPM))
+            RgBuf["erpm_eprop", array][RgBufPtr, number] = ERPMErrorProportion
+            
+            
+            NewThrottle = min(100, max(0, NewThrottle))
+            Engine:acfThrottle(NewThrottle)
+        
+            local NewClutch = CtlClutch
+            if ( ComputedERPM - ComputedSRPM > 100 ) {
+                NewClutch += -0.005
+            } elseif ( ComputedERPM - ComputedSRPM < -100 ) {
+                NewClutch += 0.05
+            }
+            NewClutch = min(1, max(0, NewClutch))
+            Clutch = NewClutch
+            Gearbox:acfClutch(NewClutch)
+            ]#
+        }
+    }
+}
+
+event removed(Resetting:number) {
+    propDeleteAll()
+    Engine:acfThrottle(0)
+    Engine:acfActive(0)
+    FuelTank:acfActive(0)
+    Gearbox:acfClutch(1)
+    Engine:acfUnlinkFrom(Gearbox, 1)
+    Engine:acfUnlinkFrom(FuelTank, 1)
+}

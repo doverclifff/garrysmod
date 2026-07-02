@@ -1,0 +1,40 @@
+@name lib/drv/consolescreen/v1/example
+@inputs WL:wirelink
+@persist IP:number S:array S_len:number S_idx:number Clk:number
+
+#include "lib/drv/consolescreen/v1/library"
+
+WL = wirelink()
+IP = 1
+Clk = 0
+
+S = "Lorem ipsum dolor sit amet consectetur adipiscing elit quisque faucibus ex sapien vitae pellentesque sem placerat in id cursus mi pretium tellus duis convallis tempus":explode("")
+S_len = S:count()
+S_idx = 0
+
+event tick() {
+    if ( IP == 0 ) {
+        break
+    } elseif ( IP == 1 ) {
+        WL:csWriteClearScreen(1)
+        WL:csWriteBGColor(002)
+        WL:csWriteCursorEnabled(0)
+        WL:csWriteClk(!Clk)
+        IP = 2
+    } elseif ( IP == 2 )  {
+        if ( S_idx < S_len ) {
+            WL:csWriteChar(0 + S_idx, S[S_idx+1, string], 0000999)
+            S_idx += 1
+            IP = 3
+            WL:csWriteClk(!Clk)
+            break
+        } else {
+            IP = 0
+            break
+        }
+    } elseif ( IP == 3 ) {
+        IP = 2
+        WL:csWriteClk(!Clk)
+        break
+    }
+}

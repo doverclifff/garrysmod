@@ -1,0 +1,82 @@
+@name bin/digitalscreen/v1/helloworld
+@inputs [DS]:wirelink
+@persist [ColorMode Cols Rows]:number
+@persist [IDX]:number
+@strict
+
+function number wirelink:dsClkHi() {
+    This[1048569 + 6] = 1
+    return 1
+}
+
+function number wirelink:dsClkLo() {
+    This[1048569 + 6] = 0
+    return 0
+}
+
+function void wirelink:dsClk() {
+    This[1048569 + 6] = !This[1048569 + 6]
+    return
+}
+
+function void wirelink:dsInitialize(Cols:number, Rows:number, ColorMode:number, CompressionEnable:number) {
+    # ColorMode in [0, 1, 2, 3]?
+    assert(0 <= ColorMode <= 3, "Argument ColorMode must be one of: 0, 1, 2, 3.")
+    # Cols, Rows in (0, 512]?
+    assert(1 <= Cols <= 512, "Argument Cols out of bounds: 1 <= Cols <= 512.")
+    assert(1 <= Rows <= 512, "Argument Rows out of bounds: 1 <= Rows <= 512.")
+
+    local BaseAddr = 1048569
+    local Offset = 0
+
+    This:dsClkLo()
+
+    # Set number of rows register 1048572
+    Offset = 3
+    This[BaseAddr + Offset] = Rows
+
+    # Set number of columns register 10485763
+    Offset = 4
+    This[BaseAddr + Offset] = Cols
+
+    # Invert hardware clear screen register 1048574
+    Offset = 5
+    This[BaseAddr + Offset] = !This[BaseAddr + Offset]
+    
+    # Clk register 1048575
+    # Offset = 6
+    # This[BaseAddr + Offset] = !This[BaseAddr + Offset]
+    
+    # Set compression enable register 1048576 (enabled by default)
+    Offset = 7
+    This[BaseAddr + Offset] = CompressionEnable
+}
+
+if (!->DS) {
+    error("No display device was detected.")
+} else {
+    ColorMode = 0
+    local Scale = 1
+    Cols = (512 >> Scale) - (512 >> (Scale + 2))
+    Rows = 512 >> (Scale + 1)
+    DS:dsInitialize(Cols, Rows, ColorMode, 1)
+    IDX = -1
+}
+
+event tick() {
+    local IDXMax = Cols * Rows + -1
+    local BaseColor = vec(250, 32, 242),
+    while ( perf(10) ) {
+        IDX += 1
+        IDX = IDX % IDXMax
+        DS[IDX] = rgb2digi(vec(1 - (IDX / IDXMax)) * BaseColor, ColorMode)
+    }
+    if ( !timerExists("dsClkHi") ) {
+        timer("dsClkHi", 66 * _TICKINTERVAL, function () { 
+            DS:dsClkHi()
+            timer("dsClkLo", 6 * _TICKINTERVAL, function () {
+                DS:dsClkLo()
+            })
+        })
+    }
+}

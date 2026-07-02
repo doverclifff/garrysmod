@@ -1,0 +1,101 @@
+@name bin/poc/053026 - Chassis
+@inputs Uplink:wirelink GlobalsUplink:wirelink
+@outputs Downlink:wirelink
+@persist Status:number GDT:table
+@trigger none 
+@strict
+
+if (!->GlobalsUplink) {
+    error("!->GlobalsUplink")   
+}
+
+Downlink = wirelink()
+GDT = table()
+
+# ----
+
+function number setStatus(NewStatus:number) {
+    local E = entity()
+    if ( NewStatus == 0 ) {
+        E:setColor(vec(255, 255, 0))
+        E:soundPlay(1, 1, "fvox/beep.wav")
+    } elseif ( NewStatus == 1 ) {
+        E:setColor(vec(0, 255, 0))
+        E:soundPlay(1, 1, "fvox/blip.wav")
+    } else {
+        E:setColor(vec(255, 0, 0))
+        E:soundPlay(1, 1, "fvox/fuzz.wav")
+    }
+    return NewStatus
+}
+Status = setStatus(0)
+
+function table newEntityDescriptor(Key:string, Group:number, Index:number, Model:string, Position:vector, Angle:angle, Scale:vector, Mass:number, Color:vector4) {
+    # Must be unique key:
+    if (GDT:keys():indexOf(Key)) {
+        print(Key + " is not unique!")
+        error("KeyError")   
+    }
+
+    GDT[Key, table] = table(
+        "key" = Key,
+        "group" = Group,
+        "index" = Index,
+        "model" = Model, 
+        "position" = Position, 
+        "angle" = Angle, 
+        "scale" = Scale,
+        # Mass < 1 snaps to -1:
+        "mass" = Mass >= 1 ?: -1, 
+        "color" = Color,
+        "entity" = entity()
+    )
+    return GDT[Key, table]
+}
+
+# ---- 
+
+enableConstraintUndo(0)
+
+local ChassisAnchor = GlobalsUplink["ChassisAnchor", vector]
+local FrontAxleAnchor = GlobalsUplink["FrontAxleAnchor", vector]
+local FrontAxleWidth = GlobalsUplink["FrontAxleWidth", number]
+local RearAxleAnchor = GlobalsUplink["RearAxleAnchor", vector]
+local RearAxleWidth = GlobalsUplink["RearAxleWidth", number]
+local WheelMdl = "models/sprops/trans/miscwheels/thin_moto30.mdl"
+local ChassisMdl = "models/mechanics/solid_steel/type_f_6_8.mdl"
+
+newEntityDescriptor("Ch", 2, 1, ChassisMdl, ChassisAnchor, ang(0, 0, 0), vec(1), 24, vec4(255))
+newEntityDescriptor("FL", 1, 1, WheelMdl, FrontAxleAnchor + vec(-0.5 * FrontAxleWidth, 0, 0), ang(0, 90, 0), vec(1), 24, vec4(255))
+newEntityDescriptor("FR", 1, 2, WheelMdl, FrontAxleAnchor + vec( 0.5 * FrontAxleWidth, 0, 0), ang(0, 90, 0), vec(1), 24, vec4(255))
+newEntityDescriptor("RL", 1, 3, WheelMdl, RearAxleAnchor  + vec(-0.5 * RearAxleWidth, 0, 0), ang(0, 90, 0), vec(1), 24, vec4(255))
+newEntityDescriptor("RR", 1, 4, WheelMdl, RearAxleAnchor  + vec( 0.5 * RearAxleWidth, 0, 0), ang(0, 90, 0), vec(1), 24, vec4(255))
+
+event tick() {
+    if ( Status == 0 ) {
+        local DefaultEntity = entity()
+        local SpawningDone = 1
+        foreach ( _:string, V:table = GDT ) {
+            if ( V["entity", entity] == DefaultEntity ) {
+                SpawningDone = 0
+                if ( propCanCreate() == 1 ) {
+                    V["entity", entity] = propSpawn(V["model", string], V["position", vector], V["angle", angle], 1)
+                }
+                break
+            }
+        }
+        if ( SpawningDone == 1) {
+            Status = setStatus(1)   
+        }
+    }
+}
+
+event removed(Resetting:number) {
+    propDeleteAll()
+    holoDeleteAll()
+}
+
+
+_ = GDT   
+_ = Uplink
+_ = Status

@@ -1,0 +1,57 @@
+@name bin/poc/061626/uuuh4
+@inputs 
+@outputs [GDT]:table
+@persist 
+@trigger none 
+@strict
+
+function void initialize() {
+    local E = entity()
+    E:setAng(ang(0, 90, 0))
+    E:setPos(round(E:pos(), 0))
+    
+    
+    GDT = table()
+    propSpawnUndo(0)
+    propSpawnEffect(0)
+}
+
+function entity propSpawnFacingY(Model:string, Position:vector, Origin:vector, Frozen:number) {
+    local NewProp = propSpawn(Model, Position + Origin, ang(0), Frozen)
+    local Forward = round(NewProp:forward(), 0) # 1 0 0, 0 1 0, or, 1 0 0
+    local A = ang(Forward:z(), Forward:x(), Forward:y()) * ang(90)
+    NewProp:setAng(A)
+    return NewProp
+}
+
+function void enqueue(DelayTicks:number, F:function) {
+    timer(DelayTicks * getTimers():count() * _TICKINTERVAL, F)
+    return
+}
+
+initialize()
+local D = 20
+enqueue(D, function () {
+    GDT["base", entity] = propSpawnFacingY("models/sprops/misc/boxplane.mdl", vec(0, 12, 12), round(entity():pos(), 0), 1)
+    local P = GDT["base", entity]
+    P:noCollideAll(1)
+})
+
+enqueue(D, function () {
+    local P = vec(-24, 36, 12)
+    GDT["WFL", entity] = propSpawnFacingY("models/sprops/geometry/t_fdisc_24.mdl", P, round(entity():pos(), 0), 1)
+
+    axis(GDT["WFL", entity], vec(0, 0, 1), GDT["base", entity], vec(0))
+})
+
+enqueue(D, function () {
+    GDT["WFR", entity] = propSpawnFacingY("models/sprops/misc/tubes_thin/size_2/t_tube_24x12.mdl", vec(24, 36, 12), round(entity():pos(), 0), 1)
+})
+
+enqueue(D, function () {
+    GDT["WBL", entity] = propSpawnFacingY("models/sprops/misc/tubes_thin/size_2/t_tube_24x12.mdl", vec(-24, -36, 12), round(entity():pos(), 0), 1)
+})
+
+enqueue(D, function () {
+    GDT["WBR", entity] = propSpawnFacingY("models/sprops/misc/tubes_thin/size_2/t_tube_24x12.mdl", vec(24, -36, 12), round(entity():pos(), 0), 1)
+})

@@ -1,0 +1,12 @@
+function string rsGetToolgun() {
+    return owner():tool()
+}
+
+function void rsSetToolgun(S:string) {
+    concmd("gmod_tool " + S)
+}
+
+function void rsToolgunM1() {
+    concmd("+attack")
+}
+    

@@ -1,0 +1,176 @@
+@name bin/poc/053026 - Powertrain
+@inputs Uplink:wirelink GlobalsUplink:wirelink
+@outputs Downlink:wirelink
+@outputs Status:number GDT:table 
+@persist EnableDebug:number
+@trigger none 
+@strict
+
+if (!->GlobalsUplink) {
+    error("!->GlobalsUplink")   
+}
+
+EnableDebug = 1
+Downlink = wirelink()
+GDT = table()
+
+# ----
+
+function number setStatus(NewStatus:number) {
+    local E = entity()
+    if ( NewStatus == 0 ) {
+        E:setColor(vec(255, 255, 0))
+        E:soundPlay(1, 1, "fvox/beep.wav")
+    } elseif ( NewStatus == 1 ) {
+        E:setColor(vec(0, 255, 0))
+        E:soundPlay(1, 1, "fvox/blip.wav")
+    } else {
+        E:setColor(vec(255, 0, 0))
+        E:soundPlay(1, 1, "fvox/fuzz.wav")
+    }
+    return NewStatus
+}
+Status = setStatus(0)
+
+function entity findClosestACFEngine() {
+    findIncludePlayerProps(owner())
+    if (1 > findByClass("acf_engine")) {
+        setStatus(-1)
+        error("No ACF engine was found.")
+    }
+    findSortByDistance(entity():pos())
+    return findResult(1)
+}
+
+function entity findClosestACFGearbox() {
+    findIncludePlayerProps(owner())
+    if (1 > findByClass("acf_gearbox")) {
+        setStatus(-1)
+        error("No ACF gearbox was found.")
+    }
+    findSortByDistance(entity():pos())
+    return findResult(1)
+}
+
+function entity findClosestACFFuelTank() {
+    findIncludePlayerProps(owner())
+    if (1 > findByClass("acf_fueltank")) {
+        setStatus(-1)
+        error("No ACF fuel tank was found.")
+    }
+    findSortByDistance(entity():pos())
+    return findResult(1)
+}
+
+function void actionGDTApplyStage1Transformations() {
+    local Engine = GDT["acf_engine", entity]
+    local Gearbox = GDT["acf_gearbox", entity]
+    local FuelTank = GDT["acf_fueltank", entity]
+
+    # models/engines/inline6s.mdl
+    Engine:setAng(ang(0, 90, 0))
+    # models/engines/t5small.mdl
+    Gearbox:setAng(ang(0, 180, 0))
+    FuelTank:setAng(ang(0, 90, 0))
+
+    
+    local EngineAABBSize = ceil(Engine:aabbWorldSize(), 1)
+    local GearboxAABBSize = ceil(Gearbox:aabbWorldSize(), 1)
+    local FuelTankAABBSize = ceil(Gearbox:aabbWorldSize(), 1)
+    
+    local PowertrainAnchor = GlobalsUplink["PowertrainAnchor", vector]
+    local EngineAnchor = vec(0, 0.5, 0.1) * EngineAABBSize + PowertrainAnchor
+    local GearboxAnchor = vec(0, 0, 0.6) * GearboxAABBSize + vec(0, -0.55, 0) * EngineAABBSize + EngineAnchor
+    local FuelTankAnchor = vec(1.1, -0.333, 0) * FuelTankAABBSize + GearboxAnchor
+    
+    Engine:setPos(EngineAnchor)
+    Gearbox:setPos(GearboxAnchor)
+    FuelTank:setPos(FuelTankAnchor)
+    
+    if (EnableDebug) {
+        holoCreate(1, PowertrainAnchor, vec(1.0), ang(0), vec4(255), "models/sprops/misc/axis_plane.mdl")
+        holoCreate(2, EngineAnchor, vec(0.5), ang(0), vec4(255), "models/sprops/misc/axis_plane.mdl")
+        holoCreate(3, GearboxAnchor, vec(0.5), ang(0), vec4(255), "models/sprops/misc/axis_plane.mdl")
+        holoCreate(4, FuelTankAnchor, vec(0.5), ang(0), vec4(255), "models/sprops/misc/axis_plane.mdl")
+        timer(10, function () {
+            holoDelete(1)
+            holoDelete(2)
+            holoDelete(3)
+            holoDelete(4)
+        })
+    }
+
+    return
+}
+
+function void actionGDTApplyStage2Transformations() {
+    local Engine = GDT["acf_engine", entity]
+    local Gearbox = GDT["acf_gearbox", entity]
+    local FuelTank = GDT["acf_fueltank", entity]
+    Engine:setAng(round(ang(0, 0, 0) + Engine:angles(), 0))
+    Gearbox:setAng(round(ang(0, 0, 5) + Gearbox:angles(), 0))
+    FuelTank:setAng(round(ang(0, 0, 0) + FuelTank:angles(), 0))
+    if (EnableDebug) {
+        holoCreate(5, Gearbox:pos(), vec(0.5), ang(0), vec4(255, 255, 0, 200), "models/sprops/misc/axis_plane.mdl")
+        holoCreate(6, Gearbox:pos(), vec(0.5), Gearbox:angles(), vec4(0, 0, 255, 200), "models/sprops/misc/axis_plane.mdl")
+        timer(10, function () {
+            holoDelete(5)
+            holoDelete(6)
+        })
+    }
+    return
+}
+
+function void actionGDTResetConstraints() {
+    foreach(K:string, V:entity = GDT) {
+        if (K:startsWith("acf_")) {
+            V:propFreeze(1)
+            V:constraintBreak()
+        }
+    }
+    return
+}
+
+function void actionGDTApplyConstraints() {
+    local Engine = GDT["acf_engine", entity]
+    local Gearbox = GDT["acf_gearbox", entity]
+    local FuelTank = GDT["acf_fueltank", entity]
+    
+    FuelTank:weld(Engine)
+    FuelTank:weld(Gearbox)
+    Gearbox:weld(Engine)
+    
+    FuelTank:noCollide(Engine)
+    FuelTank:noCollide(Gearbox)
+    Gearbox:noCollide(Engine)
+    return 
+}
+
+# ---- 
+
+enableConstraintUndo(0)
+
+GDT["acf_engine", entity] = findClosestACFEngine()
+GDT["acf_gearbox", entity] = findClosestACFGearbox()
+GDT["acf_fueltank", entity] = findClosestACFFuelTank()
+
+timer(5 * _TICKINTERVAL, function () {
+    actionGDTResetConstraints()
+})
+timer(10 * _TICKINTERVAL, function () {
+    actionGDTApplyStage1Transformations()
+})
+timer(15 * _TICKINTERVAL, function () {
+    actionGDTApplyStage2Transformations()
+})
+timer(20 * _TICKINTERVAL, function () {
+    actionGDTApplyConstraints()
+    Status = setStatus(1)
+})
+
+event removed(Resetting:number) {
+    holoDeleteAll()
+}
+
+_ = Uplink
+_ = Status

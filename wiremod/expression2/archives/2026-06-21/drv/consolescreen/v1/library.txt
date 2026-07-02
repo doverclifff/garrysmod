@@ -1,0 +1,626 @@
+@name lib/drv/consolescreen/v1/library
+
+#[ **** **** **** **** **
+    Caching Control Registers
+    Registers 2020-2021 (2 in total)
+    These registers seem to be no-op?
+
+    From wire/lua/entities/gmod_wire_consolescreen/cl_init.lua:
+
+    2020 - Force cache refresh
+    2021 - Cached blocks size (up to 28, 0 if disabled)
+** **** **** **** **** ]#
+
+# NOTE: If these registers turn out NOT to be no-op, then add support for them here.
+
+#[ **** **** **** **** **
+    Image Control Registers
+    Registers 2019, 2022-2030 (10 in total)
+    The Image Control registers determine the image scaling, rotation, and colors.
+
+    From wire/lua/entities/gmod_wire_consolescreen/cl_init.lua:
+
+    2019 - Clear viewport defined by 2031-2034 (Shift Control registers)
+    2022 - Screen ratio (read only)
+    2023 - Hardware scale
+    2024 - Rotation (0 - 0*, 1 - 90*, 2 - 180*, 3 - 270*)
+    2025 - Brightness White
+    2026 - Brightness B
+    2027 - Brightness G
+    2028 - Brightness R
+    2029 - Vertical scale (1)
+    2030 - Horizontal scale (1)
+** **** **** **** **** ]#
+
+function number wirelink:csReadScreenRatio() {
+    #[
+        Reads the console screen's aspect ratio from magic address 2022. 
+        This register is read-only. By default, it has a value of 3/4.
+    ]#
+    return This[2022]
+}
+
+function number wirelink:csReadHWScale() {
+    #[
+        Reads the console screen's hardware scale register at magic address 2023.
+        Default value is 0 (and this register is read-only).
+    ]#
+    return This[2023]
+}
+
+function number wirelink:csReadRotationMode() {
+    #[
+        Reads the console screen's rotation mode register at magic address 2024. 
+        Default value is 0. Valid values for this register are [0, 3]. 
+        This register's value is multiplied by 90 degrees to obtain the final rotation.
+    ]#
+    return This[2024]
+}
+
+function void wirelink:csWriteRotationMode(RotationMode:number) {
+    #[ 
+        Writes to the console screen's rotation mode register at magic address 2024. 
+        Default value is 0. Valid values for this register are integers in [0, 3].
+    ]#
+    This[2024] = RotationMode
+}
+
+function void wirelink:csWriteBrightnessWhite(Brightness:number) {
+    #[
+        Writes to the console screen's white brightness register at magic address 2025.
+        Default value is 1.0. Valid values for this register are real numbers in [0.0, 1.0].
+    ]#
+    This[2025] = Brightness
+    return
+}
+
+function void wirelink:csWriteBrightnessBlue(Brightness:number) {
+    #[
+        Writes to the console screen's blue color brightness register at magic address 2026. 
+        Default value is 1.0. Valid values for this register are real numbers in [0.0, 1.0].
+    ]#
+    This[2026] = Brightness
+    return
+}
+
+function void wirelink:csWriteBrightnessGreen(Brightness:number) {
+    #[
+        Writes to the console screen's green color brightness register at magic address 2027.
+        Default value is 1.0. Valid values for this register are real numbers in [0.0, 1.0].
+    ]#
+    This[2027] = Brightness
+    return
+}
+
+function void wirelink:csWriteBrightnessRed(Brightness:number) {
+    #[
+        Writes to the console screen's red color brightness register at magic address 2028.
+        Default value is 1.0. Valid values for this registers are real numbers in [0.0, 1.0].
+    ]#
+    This[2028] = Brightness
+    return
+}
+
+function number wirelink:csReadBrightnessWhite() {
+    #[
+        Reads the value stored in the console screen's white color brightness register 
+        at magic address 2025.
+    ]#
+    return This[2025]
+}
+
+function number wirelink:csReadBrightnessBlue() {
+    #[
+        Reads the value stored in the console screen's blue color brightness register 
+        at magic address 2026.
+    ]#
+    return This[2026]
+}
+
+function number wirelink:csReadBrightnessGreen() {
+    #[
+        Reads the value stored in the console screen's green color brightness register
+        at magic address 2027.
+    ]#
+    return This[2027]
+}
+
+function number wirelink:csReadBrightnessRed() {
+    #[
+        Reads the value stored in the console screen's red color brightness register 
+        at magic address 2028.
+    ]#
+    return This[2028]
+}
+
+function vector4 wirelink:csReadBrightnessBGRA() {
+    #[
+        Reads the console screen's blue/green/red/white color brightness registers 
+        and returns their values as the X/Y/Z/W components of a vector4.
+    ]#
+    return vec4(
+        This:csReadBrightnessBlue(), 
+        This:csReadBrightnessGreen(),
+        This:csReadBrightnessRed(),
+        This:csReadBrightnessWhite()
+    )
+}
+
+function vector wirelink:csReadBrightnessBGR() {
+    #[
+        Reads the console screen's blue/green/red color brightness registers
+        and returns their values as the X/Y/Z components of a vector.
+    ]#
+    return vec(
+        This:csReadBrightnessBlue(), 
+        This:csReadBrightnessGreen(),
+        This:csReadBrightnessRed()
+    )
+}
+
+function void wirelink:csWriteBrightnessBGRA(BGRA:vector4) {
+    #[
+        Overwrites the console screen's blue/green/red/white color brightness registers
+        with the X/Y/Z/W components of vector4 BGRA.
+    ]#
+    This:csWriteBrightnessRed(BGRA:x())
+    This:csWriteBrightnessGreen(BGRA:y())
+    This:csWriteBrightnessRed(BGRA:z())
+    This:csWriteBrightnessWhite(BGRA:w())
+    return
+}
+
+function void wirelink:csWriteBrightnessBGR(BGR:vector) {
+    #[
+        Same as wirelink:csWriteBrightnessBGRA(BGRA:vector4), 
+        but leaves the white color brightness register unmodified.
+    ]#
+    This:csWriteBrightnessBlue(BGR:x())
+    This:csWriteBrightnessGreen(BGR:y())
+    This:csWriteBrightnessRed(BGR:z())
+    return
+}
+
+function number wirelink:csReadVerticalScale() {
+    #[
+        Reads the console screen's image vertical scale register at magic address 2029. 
+        Default value is 1.0.
+    ]#
+    return This[2029]
+}
+
+function number wirelink:csReadHorizontalScale() {
+    #[
+        Reads the console screen's image horizonal scale register at magic address 2030.
+        Default value is 1.0.
+    ]#
+    return This[2030]
+}
+
+function void wirelink:csWriteVerticalScale(VScale:number) {
+    #[
+        Overwrites the console screen's image vertical scale register at magic address 2029.
+        Default value is 1.0.
+    ]#
+    This[2029] = VScale
+}
+
+function void wirelink:csWriteHorizontalScale(HScale:number) {
+    #[
+        Overwrites the console screen's image horizonal scale register at magic address 2030.
+        Default value is 1.0.
+    ]#
+    This[2030] = HScale
+}
+
+#[ **** **** **** **** **
+    Shifting Control Registers
+    Registers 2031-2034 (4 in total)
+    VERIFY: The Shifting Control registers together describe a rectangular region of the console screen.
+
+    From wire/lua/entities/gmod_wire_consolescreen/cl_init.lua:
+
+    2031 - Low shift column
+    2032 - High shift column
+    2033 - Low shift row
+    2034 - High shift row
+** **** **** **** **** ]#
+
+function number wirelink:csReadShiftLowColumn() {
+    # Reads the console screen's low shift column shift control register at magic address 2031. Default value is 0.
+    return This[2031]
+}
+
+function number wirelink:csReadShiftHighColumn() {
+    # Reads the console screen's high shift column shift control register at magic address 2032. Default value is 29.
+    return This[2032]
+}
+
+function number wirelink:csReadShiftLowRow() {
+    # Reads the console screen's low shift row shift control register at magic address 2033. Default value is 0.
+    return This[2033]
+}
+
+function number wirelink:csReadShiftHighRow() {
+    # Reads the console screen's high shift row shift control register at magic address 2034. Default value is 17.
+    return This[2034]
+}
+
+function void wirelink:csWriteShiftLowColumn(Col:number) {
+    # Overwrites the console screen's low shift column shift control register at magic address 2031. Default value is 0.
+    This[2031] = Col
+    return
+}
+
+function void wirelink:csWriteShiftHighColumn(Col:number) {
+    # Overwrites the console screen's high shift column shift control register at magic address 2032. Default value is 29.
+    This[2032] = Col
+    return
+}
+
+function void wirelink:csWriteShiftLowRow(Row:number) {
+    # Overwrites the console screen's low shift row shift control register at magic address 2033. Default value is 0.
+    This[2033] = Row
+    return
+}
+
+function void wirelink:csWriteShiftHighRow(Row:number) {
+    # Overwrites the console screen's high shift row shift control register at magic address 2034. Default value is 17.
+    This[2034] = Row
+    return
+}
+
+function vector4 wirelink:csReadShiftRect() {
+    #[
+        Reads the console screen's shift control registers, 
+        returning their values as a pair of 2-ary vectors packed into a vector4.
+        The first vector pair (xy) is the LOW column and LOW row; the top-left corner of the rect.
+        The second vector pair (zw) is the HIGH column and HIGH row; the bottom-right corner of the rect.
+
+        a visual aid:
+
+        xy ---  +
+        |  \    |
+        |    \  |
+        +  --- zw
+    ]#
+    return vec4(
+        This:csReadShiftLowColumn(), 
+        This:csReadShiftLowRow(), 
+        This:csReadShiftHighColumn(), 
+        This:csReadShiftHighRow()
+    )
+}
+
+function void wirelink:csWriteShiftRect(X1:number, Y1:number, X2:number, Y2:number) {
+    #[
+        Overwrites the console screen's shift control registers with the passed argument values,
+        where X1 -> Low Column, Y1 -> Low Row, X2 -> High Column, Y2 -> High Row.
+    ]#
+    This:csWriteShiftLowColumn(X1)
+    This:csWriteShiftLowRow(Y1)
+    This:csWriteShiftHighColumn(X2)
+    This:csWriteShiftHighRow(Y2)
+    return
+}
+
+function void wirelink:csWriteShiftRect(XY1:vector2, XY2:vector2) {
+    #[
+        Overwrites the console screen's shift control registers with the passed argument values,
+        where X1 -> Low Column, Y1 -> Low Row, X2 -> High Column, Y2 -> High Row.
+    ]#
+    This:csWriteShiftLowColumn(XY1:x())
+    This:csWriteShiftLowRow(XY1:y())
+    This:csWriteShiftHighColumn(XY2:x())
+    This:csWriteShiftHighRow(XY2:y())
+    return
+}
+
+function void wirelink:csWriteShiftRect(XYZW:vector4) {
+    #[
+        Overwrites the console screen's shift control registers with the passed argument values,
+        where X1 -> Low Column, Y1 -> Low Row, X2 -> High Column, Y2 -> High Row.
+    ]#
+    This:csWriteShiftLowColumn(XYZW:x())
+    This:csWriteShiftLowRow(XYZW:y())
+    This:csWriteShiftHighColumn(XYZW:z())
+    This:csWriteShiftHighRow(XYZW:w())
+    return
+}
+
+#[ **** **** **** **** **
+    Character Output Control Registers
+    Registers 2035-2036 (2 in total)
+    VERIFY: These registers control the character set and the additive brightness value
+    of characters.
+
+    From wire/lua/entities/gmod_wire_consolescreen/cl_init.lua:
+
+    2035 - Charset, always 0
+    2036 - Brightness (additive)
+** **** **** **** **** ]#
+
+# NOTE: Since consolescreen cl_init.lua says that register 2035 is "always 0", 
+#       I don't think there's a reason to add support for it (so I didn't).
+
+function number wirelink:csReadCharAdditiveBrightness() {
+    #[
+        Reads the Character Output Additive Brightness control register at magic address 2035.
+        This register's default value is 0.
+    ]#
+    return This[2035]
+}
+
+function void wirelink:csWriteCharAdditiveBrightness(AddBrightness:number) {
+    #[
+        Overwrites the Character Output Additive Brightness control register
+        at magic address 2035, with the argument value.
+    ]#
+    This[2035] = AddBrightness
+    return
+}
+
+#[ **** **** **** **** **
+    Control Control Registers
+    Registers 2037-2042 (2 in total)
+    These registers are used for shifting and clearing rows [2037-2040], clearing the screen [2041], 
+    and setting the screen's background color [2042].
+
+    From wire/lua/entities/gmod_wire_consolescreen/cl_init.lua:
+
+    2037 - Shift cells (number of cells, >0 right, <0 left)
+    2038 - Shift rows (number of rows, >0 shift up, <0 shift down)
+    2039 - Hardware Clear Row (Writing clears row)
+    2040 - Hardware Clear Column (Writing clears column)
+    2041 - Hardware Clear Screen
+    2042 - Hardware Background Color (000)
+** **** **** **** **** ]#
+
+function number wirelink:csReadShiftCells() {
+    #[
+        Reads the Control Shift Cells control register at magic address 2037.
+        Default value is 0.
+    ]#
+    return This[2037]
+}
+
+function number wirelink:csReadShiftRows() {
+    #[
+        Reads the Control Shift Rows control register at magic address 2038.
+        Default value is 0.
+    ]#
+    return This[2038]
+}
+
+function number wirelink:csReadClearRow() {
+    #[
+        Reads the Control Clear Row control register at magic address 2039.
+        Default value is 0.
+    ]#
+    return This[2039]
+}
+
+function number wirelink:csReadClearColumn() {
+    #[
+        Reads the Control Clear Column control register at magic address 2040.
+        Default value is 0.
+    ]#
+    return This[2040]   
+}
+
+function number wirelink:csReadClearScreen() {
+    #[
+        Reads the Control Clear Screen control register at magic address 2041.
+        Default value is 0.
+    ]#
+    return This[2041]
+}
+
+function number wirelink:csReadBGColor() {
+    #[
+        Reads the Control Background Color control register at magic address 2042.
+        Default value is 0.
+    ]#
+    return This[2042]
+}
+
+function void wirelink:csWriteShiftCells(NumberOfCells:number) {
+    #[
+        Overwrites the Control Shift Cells control register at magic address 2037.
+    ]#
+    This[2037] = NumberOfCells
+    return
+}
+
+function void wirelink:csWriteShiftRows(NumberOfRows:number) {
+    #[
+        Overwrites the Control Shift Rows control register at magic address 2038.
+    ]#
+    This[2038] = NumberOfRows
+    return
+}
+
+function void wirelink:csWriteClearRow(N:number) {
+    #[
+        Overwrites the Control Clear Row control register at magic address 2039.
+    ]#
+    This[2039] = N
+    return
+}
+
+function void wirelink:csWriteClearColumn(N:number) {
+    #[
+        Overwrites the Control Clear Row control register at magic address 2040.
+    ]#
+    This[2040] = N
+    return
+}
+
+function void wirelink:csWriteClearScreen(N:number) {
+    #[
+        Overwrites the Control Clear Row control register at magic address 2041.
+    ]#
+    This[2041] = N
+    return
+}
+
+function void wirelink:csWriteBGColor(NNN:number) {
+    #[
+        Overwrites the Control Background Color control register at magic address 2042 with NNN.
+    ]#
+    This[2042] = NNN
+    return
+}
+
+#[ **** **** **** **** **
+    Cursor Control Registers
+    Registers 2043-2046 (4 in total)
+    These registers are used enable/disable the cursor, set its position, size, and blink rate.
+
+    From wire/lua/entities/gmod_wire_consolescreen/cl_init.lua:
+
+    2043 - Cursor Blink Rate (0.50)
+    2044 - Cursor Size (0.25)
+    2045 - Cursor Address
+    2046 - Cursor Enabled
+** **** **** **** **** ]#
+
+function number wirelink:csReadCursorBlinkRate() {
+    return This[2043]
+}
+
+function number wirelink:csReadCursorSize() {
+    return This[2044]
+}
+
+function number wirelink:csReadCursorAddress() {
+    return This[2045]
+}
+
+function number wirelink:csReadCursorEnabled() {   
+    return This[2046]
+}
+
+function void wirelink:csWriteCursorBlinkRate(BlinkRate:number) {
+    This[2043] = BlinkRate
+    return
+}
+
+function void wirelink:csWriteCursorSize(Size:number) {
+    This[2044] = Size
+    return
+}
+
+function void wirelink:csWriteCursorAddress(Address:number) {
+    This[2045] = Address
+    return
+}
+
+function void wirelink:csWriteCursorEnabled(Enable:number) {   
+    This[2046] = Enable
+    return
+}
+
+#[ **** **** **** **** **
+    Miscellaneous Control Registers
+    Registers 2047-2047 (1 in total)
+    This group is for all registers lacking a group in cl_init.lua function ENT:Initialize.
+
+    From wire/lua/entities/gmod_wire_consolescreen/cl_init.lua:
+
+    2047 - Clk
+** **** **** **** **** ]#
+
+function void wirelink:csWriteClk(Clk:number) {
+    #[
+        Overwrites the Clk control register at magic address 2047.
+        
+        # ENT:WriteCell(Address, value): Argument value is compared != zero
+        https://github.com/wiremod/wire/blob/c96fa69ef02491118f42bdec9101895fe37e94bd/lua/entities/gmod_wire_consolescreen/cl_init.lua#L117
+        
+        # ENT:WriteCell(Address, value): Buffer copy on Clk leading AND trailing-edge
+        https://github.com/wiremod/wire/blob/c96fa69ef02491118f42bdec9101895fe37e94bd/lua/entities/gmod_wire_consolescreen/cl_init.lua#L265
+    ]#
+    This[2047] = Clk
+}
+
+#[ **** **** **** **** **
+    Input/Output Functions
+    These functions implement common input/output operations.
+** **** **** **** ]#
+
+function string wirelink:csReadCharString(N:number) {
+    #[
+        Reads the string of the N-th character in the front-buffer.
+    ]#
+    # N = [0, 1, 2, 3, ...] -> [0, 2, 4, 6, ...]
+    return This[2 * N + 0, string]
+}
+
+function number wirelink:csReadCharAttributes(N:number) {
+    #[
+        Reads the attributes (integer) of the N-th character in the front-buffer.
+    ]#
+    # N = [0, 1, 2, 3, ...] -> [1, 3, 5, 7, ...]
+    return This[2 * N + 1]
+}
+
+function array wirelink:csReadChar(N:number) {
+    #[
+        Reads the string and attributes of the N-th character in the front-buffer.
+        Returns them as a 2-ary array of string and number type respectively.
+    ]#
+    return array(
+        This[2 * N + 0, string], 
+        This[2 * N + 1]
+    )
+}
+
+function void wirelink:csWriteCharString(N:number, S:string) {
+    #[
+        Writes the 1-ary string S to the character cell of the N-th character in the back-buffer.
+    ]#
+    This[2 * N + 0, string] = S
+    return
+}
+
+function void wirelink:csWriteCharAttributes(N:number, Attrs:number) {
+    #[
+        Writes the integer Attrs to the attributes cell of the N-th character in the back-buffer.
+    ]#
+    This[2 * N + 1] = Attrs
+    return
+}
+
+function void wirelink:csWriteChar(N:number, S:string, Attrs:number) {
+    #[
+        Writes the character string S with the integer display attributes Attrs to the
+        character cell and the attributes cell respectively, of the N-th character in
+        the back-buffer.
+    ]#
+    This:csWriteCharString(N, S)
+    This:csWriteCharAttributes(N, Attrs)
+    return
+}
+
+#[ **** **** **** **** **
+    Reset Functions
+    These functions implement common reset operations.
+** **** **** **** ]#
+
+function void wirelink:csWriteResetReg(N:number) {
+    #[
+        Takes an integer argument 1 <= N <= 26. N selects a control register to reset.
+        Passing N = 1 will reset the control register at address 2022.
+        Overwrites the specified control register [addrs 2022-2047] with default values sourced from
+        wire/lua/entities/gmod_wire_consolescreen/cl_init.lua.
+    ]#
+    local RegisterDefault = array(3/4, 0, 0, 1, 1, 1, 1, 1, 1, 0, 29, 0, 17, 0, 0, 0, 0.5, 0.25, 0, 0)
+    local Offset = 2022 + N - 1
+    assert(1 <= N <= 26)
+    assert(2022 <= Offset <= 2047)
+    This[Offset, number] = RegisterDefault[N, number]
+    This:csWriteClk(1)
+    return
+}
+

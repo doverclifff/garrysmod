@@ -1,0 +1,267 @@
+@name lib/drv/digitalscreen/v1/example
+@inputs DS:wirelink
+@persist [SoftQuotaSz PixelsX PixelsY ColorMode Ready TimeStart TimeEnd ScanPtr ScanPtrMax PollCallsAccumulated KiloOpsConsumedAccumulated HaltFlag HaltAfterNFailures]
+@persist [Scoreboard]:table
+@persist [DirectionLUT]:array
+@strict
+
+#include "lib/semver/v1/library"
+#include "lib/drv/digitalscreen/v1/library"
+
+SEMVER_VERSION:semVerAssertGte("SemVer", 1, 0, 0)
+
+assert(dsGetOffsetStartRegisterFile() == 1048569, "dsGetOffsetStartRegisterFile(): expected return value 1048569")
+
+SoftQuotaSz = softQuota()
+_ = SoftQuotaSz
+PixelsX = 24
+PixelsY = PixelsX
+ColorMode = 3
+ScanPtr = 0
+ScanPtrMax = PixelsY * PixelsX + -1
+PollCallsAccumulated = 0
+KiloOpsConsumedAccumulated = 0
+LastSuccessPollTick = 0
+HaltAfterNFailures = 250
+TimeStart = systime()
+TimeEnd = systime()
+Ready = 0
+HaltFlag = 0
+
+DirectionLUT = array(
+    vec2(-1, -1), vec2(0, -1), vec2(1, -1),
+    vec2(-1,  0),              vec2(1,  0),
+    vec2(-1,  1), vec2(0,  1), vec2(1,  1)
+)
+
+Scoreboard = table(
+    "_proto" = table(
+        "win" = 0,
+        "loss" = 0
+    )
+)
+Scoreboard["random", table] = Scoreboard["_proto", table]:clone()
+Scoreboard["adjacent", table] = Scoreboard["_proto", table]:clone()
+Scoreboard["linear", table] = Scoreboard["_proto", table]:clone()
+Scoreboard:removeTable("_proto")
+
+print("[================================]")
+
+# Reset all named registers
+timer(2 * _TICKINTERVAL, function () {
+    foreach(K:string, V:number = DS_REGISTER_FILE_MAP) {
+        print(format("%s [$%x] = %d", K, V, DS:dsReadRegister(K)))
+    }
+    print("\n\nDS:dsWriteResetAllRegisters()")
+    DS:dsWriteResetAllRegisters()
+    foreach(K:string, V:number = DS_REGISTER_FILE_MAP) {
+        print(format("%s [$%x] = %d", K, V, DS:dsReadRegister(K)))
+    }
+})
+
+# Set ClkEnable = 1
+timer(4 * _TICKINTERVAL, function () {
+    print(format("\n\n%s [$%x] = %d", "ClkEnable", DS_REGISTER_FILE_MAP["ClkEnable", number], DS:dsReadRegister("ClkEnable")))
+    print("DS:dsWriteClkEnable(1)")
+    DS:dsWriteClkEnable(1)
+    print(format("%s [$%x] = %d", "ClkEnable", DS_REGISTER_FILE_MAP["ClkEnable", number], DS:dsReadRegister("ClkEnable")))
+})
+
+# Set CompressionEnable = 1
+timer(4 * _TICKINTERVAL, function () {
+    print(format("\n\n%s [$%x] = %d", "CompressionEnable", DS_REGISTER_FILE_MAP["CompressionEnable", number], DS:dsReadRegister("CompressionEnable")))
+    print("DS:dsWriteCompressionEnable(1)")
+    DS:dsWriteCompressionEnable(1)
+    print(format("%s [$%x] = %d", "CompressionEnable", DS_REGISTER_FILE_MAP["CompressionEnable", number], DS:dsReadRegister("CompressionEnable")))
+})
+
+
+# Set ResolutionX and ResolutionY
+timer(6 * _TICKINTERVAL, function () {
+    let S = array("\n")
+    S:pushString(format("%s [$%x] = %d", "ResolutionY", DS_REGISTER_FILE_MAP["ResolutionY", number], DS:dsReadRegister("ResolutionY")))
+    S:pushString(format("%s [$%x] = %d", "ResolutionX", DS_REGISTER_FILE_MAP["ResolutionX", number], DS:dsReadRegister("ResolutionX")))
+    S:pushString(format("DS:dsWriteResolutionY(%d)", PixelsY))
+    S:pushString(format("DS:dsWriteResolutionX(%d)", PixelsX))
+    DS:dsWriteResolutionY(PixelsY)
+    DS:dsWriteResolutionX(PixelsX)
+    S:pushString(format("%s [$%x] = %d", "ResolutionY", DS_REGISTER_FILE_MAP["ResolutionY", number], DS:dsReadRegister("ResolutionY")))
+    S:pushString(format("%s [$%x] = %d", "ResolutionX", DS_REGISTER_FILE_MAP["ResolutionX", number], DS:dsReadRegister("ResolutionX")))
+    print(S:concat("\n"))
+})
+
+timer(8 * _TICKINTERVAL, function () {
+    let S = array("\n")
+    S:pushString(format("%s [$%x] = %d", "ColorMode", DS_REGISTER_FILE_MAP["ColorMode", number], DS:dsReadRegister("ColorMode")))
+    S:pushString(format("DS:dsWriteColorMode(%d)", ColorMode))
+    DS:dsWriteColorMode(ColorMode)
+    S:pushString(format("%s [$%x] = %d", "ColorMode", DS_REGISTER_FILE_MAP["ColorMode", number], DS:dsReadRegister("ColorMode")))
+    print(S:concat("\n"))
+    Ready = 1
+})
+
+event tick() {
+    KiloOpsConsumedAccumulated = KiloOpsConsumedAccumulated + 0.001 * ops()
+    if ( Ready ) {
+        while ( perf(33) ) {
+            PollCallsAccumulated = PollCallsAccumulated + 1
+            let RoundTimeStart = systime()
+            let RoundTimeEnd = RoundTimeStart
+            let Success = 0
+            let SuccessMethod = -1
+            let XY = vec2(0)
+            let AdjacentXY = vec2(0)
+            let P_random = 0
+            let P_adjacent = 0
+            let Pix = 0
+            let S = array("\n")
+            let P = 0
+            let Tries = 0
+            S:pushString(format("poll(%d): Round started at %.3f seconds.", PollCallsAccumulated, RoundTimeStart - TimeStart))
+            do {
+                Tries = Tries + 1
+                # random scan
+                XY = randvec2(0, PixelsX-1)
+                P_random = DS:dsDeriveImageDataPtrFromScreenspace2D(XY)
+                Pix = DS:dsReadPixel(P_random)                    
+                S:pushString(format("[%s]: selected pixel at $%x via coordinate pair (x=%d, y=%d). (val=%d)", "Random Scan", P_random, XY:x(), XY:y(), Pix))
+
+                if ( Pix ) {
+                    # FAILURE: random scan selected a non-zeroed pixel
+                    S:pushString(format("[%s]: pixel is zeroed? NO", "Random Scan"))
+                    Scoreboard["random", table]["loss", number] = Scoreboard["random", table]["loss", number] + 1
+                } else {
+                    # SUCCESS: random scan found a zeroed pixel immediately
+                    RoundTimeEnd = systime()
+                    S:pushString(format("[%s]: pixel is zeroed? YES", "Random Scan"))
+                    Success = 1
+                    SuccessMethod = 1
+                    Scoreboard["random", table]["win", number] = Scoreboard["random", table]["win", number] + 1
+                    P = P_random
+                    break
+                }
+                # adjacency scan
+                AdjacentXY = XY + DirectionLUT[Tries, vector2]
+                S:pushString(format("[%s]: peeking (%+d, %+d) from from (%d, %d)...", "Adjacency Scan", DirectionLUT[Tries, vector2]:x(), DirectionLUT[Tries, vector2]:y(), XY:x(), XY:y()))
+                Pix = DS:dsReadPixel(AdjacentXY)
+                P_adjacent = DS:dsDeriveImageDataPtrFromScreenspace2D(AdjacentXY)
+                S:pushString(format("[%s]: selected pixel at $%x via coordinate pair (x=%d, y=%d). (val=%d)", "Adjacency Scan", P_adjacent, AdjacentXY:x(), AdjacentXY:y(), Pix))
+                if ( Pix ) {
+                    # FAILURE
+                    S:pushString(format("[%s]: pixel is zeroed? NO", "Adjacency Scan"))
+                    if ( Tries == 8 ) {
+                        S:pushString(format("[%s]: Pixel (x=%d, y=%d) is completely surrounded.", "Adjacency Scan", XY:x(), XY:y()))
+                    }
+                    Scoreboard["adjacent", table]["loss", number] = Scoreboard["adjacent", table]["loss", number] + 1
+                } else {
+                    # SUCCESS
+                    RoundTimeEnd = systime()
+                    S:pushString(format("[%s]: pixel is zeroed? YES", "Adjacency Scan"))
+                    Scoreboard["adjacent", table]["win", number] = Scoreboard["adjacent", table]["win", number] + 1
+                    Success = 1
+                    SuccessMethod = 2
+                    P = P_adjacent
+                    break
+                }
+                # linear scan
+                Pix = DS:dsReadPixel(ScanPtr)
+                S:pushString(format("[%s]: selected pixel $%x via pointer. (val=%d)", "Linear Scan", ScanPtr, Pix))
+                if ( Pix ) {
+                    # FAILURE
+                    S:pushString(format("[%s]: pixel is zeroed? NO", "Linear Scan"))
+                    Scoreboard["linear", table]["loss", number] = Scoreboard["linear", table]["loss", number] + 1
+                } else {
+                    # SUCCESS
+                    RoundTimeEnd = systime()
+                    S:pushString(format("[%s]: pixel is zeroed? YES", "Linear Scan"))
+                    Scoreboard["linear", table]["win", number] = Scoreboard["linear", table]["win", number] + 1
+                    Success = 1
+                    SuccessMethod = 3 # linear scan found a pixel before adjacency scan
+                    P = ScanPtr
+                    break
+                }
+                
+                S:pushString(format("[%s]: %d of %d memory addresses scanned (%.1f%%).", "Linear Scan", 1+ScanPtr, 1+ScanPtrMax, 100 * (ScanPtr / ScanPtrMax)))
+                if ( ScanPtr < ScanPtrMax ) {
+                    # linear scan has not exhausted the search space:
+                    ScanPtr = ScanPtr + 1
+                } else {
+                    # linear scan has completely exhausted the search space:
+                    RoundTimeEnd = systime()
+                    S:pushString(format("[%s]: The search space has been exhausted.", "Linear Scan"))
+                    Success = 1
+                    SuccessMethod = 4
+                    P = ScanPtr
+                    break
+                }        
+            } while (Tries <= 8)
+            
+            if ( Success ) {
+                LastSuccessPollTick = PollCallsAccumulated
+                let WinningStrategy = ""
+                let WinsLosses = table()
+                if ( SuccessMethod == 1 ) {
+                    WinningStrategy = "Random Scan"
+                    WinsLosses = Scoreboard["random", table]
+                    DS:dsWritePixel(P, rgb2digi(vec(220, 220, 100), 3))
+                } elseif ( SuccessMethod == 2 ) {
+                    WinningStrategy = "Adjacency Scan"
+                    WinsLosses = Scoreboard["adjacent", table]
+                    DS:dsWritePixel(P, rgb2digi(vec(100, 220, 220), 3))
+                } elseif ( SuccessMethod == 3 ) {
+                    WinningStrategy = "Linear Scan"
+                    WinsLosses = Scoreboard["linear", table]
+                    DS:dsWritePixel(P, rgb2digi(vec(220, 100, 220), 3))
+                } elseif ( SuccessMethod == 4 ) {
+                    WinningStrategy = "Linear Scan (search space exhausted)"
+                    WinsLosses = Scoreboard["linear", table]
+                    #DS:dsWritePixel(P, rgb2digi(vec(120, 240, 120), 3))
+                    HaltFlag = 1
+                } else {
+                    error("")   
+                }
+                if ( SuccessMethod != 4 ) {
+                    let Wins = WinsLosses["win", number]
+                    let Losses = WinsLosses["loss", number]
+                    let WinLossRatio = round(Wins / Losses, 3)
+                    S:pushString(format("poll(%d): SUCCESS: [%s] found a zeroed pixel at $%x after %d tries. (wins=%d, losses=%d, W/L=%.3f).", PollCallsAccumulated, WinningStrategy, P, Tries, Wins, Losses, WinLossRatio))
+                }
+
+            } else {
+                let SequentualFailuresAccumulated = PollCallsAccumulated - LastSuccessPollTick
+                S:pushString(format("poll(%d): FAILURE: All strategies failed after %d tries. [last success was %d calls ago]", PollCallsAccumulated, Tries, SequentualFailuresAccumulated))
+                if ( SequentualFailuresAccumulated > HaltAfterNFailures ) {
+                    S:pushString(format("poll(%d): FAILURE: The threshold of maximum consecutive unsuccessful calls was reached (threshold=%d).", PollCallsAccumulated, SequentualFailuresAccumulated))
+                    HaltFlag = 1
+                }
+            }
+            let RoundTimeElapsed = RoundTimeEnd - RoundTimeStart
+            S:pushString(format("poll(%d): Round ended at %.3f seconds. Round took %.0f microseconds.", PollCallsAccumulated, RoundTimeEnd - TimeStart, 1000 * 1000 * RoundTimeElapsed))
+            if ( HaltFlag ) {
+                TimeEnd = systime()
+                let RunTime = TimeEnd - TimeStart
+                S:pushString(format("poll(%d): Run complete, halting.", PollCallsAccumulated))
+                S:pushString(format("|\n| -- scoreboard --\n|"))
+                S:pushString(format("| %-12s | %-12s | %-12s | %-12s", "strategy", "wins", "losses", "W/L"))
+                foreach (_:number, V:string = Scoreboard:keys()) {
+                    S:pushString(format("| %-12s | %-12d | %-12d | %.3f%s", V, Scoreboard[V, table]["win", number], Scoreboard[V, table]["loss", number], Scoreboard[V, table]["win", number] / Scoreboard[V, table]["loss", number], ":1"))
+                }
+                S:pushString(format("|\n| -- run statistics --"))
+                S:pushString(format("|\n| %-36s %s", "result", Success ? "PASS" : "FAIL"))
+                S:pushString(format("| %-36s %-16.3f %s", "start time (systime)", TimeStart, "seconds"))
+                S:pushString(format("| %-36s %-16.3f %s", "end time (systime)", TimeEnd, "seconds"))
+                S:pushString(format("| %-36s %-16.3f %s", "time to completion", RunTime, "seconds"))
+                S:pushString(format("| %-36s %-12d %s", "poll() calls to completion", PollCallsAccumulated, "calls"))
+                S:pushString(format("| %-36s %-16.1f %s", "poll() calls per second", PollCallsAccumulated / RunTime, "calls per 1 second"))
+                S:pushString(format("| %-36s %-16.1f %s", "kOps consumed", KiloOpsConsumedAccumulated, "thousand ops"))
+                S:pushString(format("| %-36s %-16.1f %s", "kOps consumed per second", KiloOpsConsumedAccumulated / RunTime, "thousand ops per 1 second"))
+                print(S:concat("\n"))
+                Ready = 0
+            } else {
+                #print(S:concat("\n"))
+            }
+        }
+    }
+}
+
+

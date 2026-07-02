@@ -1,0 +1,72 @@
+@name bin/poc/061626/uuuuh2
+@inputs 
+@outputs 
+@persist GDT:table
+@persist [Ready Friction Mass]:number
+@trigger none 
+@strict
+
+enableConstraintUndo(0)
+propSpawnUndo(0)
+propSpawnEffect(0)
+
+Ready = 0
+GDT = table()
+
+Mass = 10
+Friction = 0.001
+_ = Friction
+Buoyancy = 0.66
+
+local E = entity()
+E:propFreeze(1)
+E:constraintBreak()
+E:setAng(E:toLocal(ang(0, 90, 0)))
+E:setPos(floor(E:pos(), 0))
+
+
+local Name     = "e2baseplate"
+#local Model    = "models/sprops/rectangles_superthin/size_2/rect_12x12.mdl"
+#local Spacing  = 12
+local Material = "sprops/sprops_grid_12x12"
+local Color    = vec4(230, 230, 220, 255)
+local Anchor   = entity():pos() + vec(0, 0, 24)
+local Delay = 33 * _TICKINTERVAL
+
+function entity newProp(Model:string, Material:string, Color:vector4, Anchor:vector, Offset:vector, Angle:angle, Name:string) {
+    NewProp = propSpawn(Model, Anchor + Offset, Angle, 1)
+    NewProp:setName(Name)
+    NewProp:setColor(Color)
+    NewProp:setMaterial(Material)
+    return NewProp   
+}
+
+timer(getTimers():count() * Delay, function () {
+    GDT["r0", entity] = newProp("models/sprops/cylinders/size_3/cylinder_6x84.mdl", Material, Color + -1 * vec4(2 * 64, 64, 64, 0), Anchor, vec(0), ang(0, 0, 90), Name)
+    GDT["r0", entity]:setMass(Mass)
+    GDT["r0", entity]:propSetBuoyancy(Buoyancy)
+    
+})
+timer(getTimers():count() * Delay, function () {
+    GDT["r1", entity] = newProp("models/sprops/cylinders/size_3/cylinder_6x84.mdl", Material, Color + -1 * vec4(64, 2 * 64, 64, 0), Anchor + vec(12, 0, 0), vec(0), ang(0, 0, 90), Name)
+    GDT["r1", entity]:setMass(Mass)
+    GDT["r1", entity]:propSetBuoyancy(Buoyancy)
+    
+    GDT["r1", entity]:noCollide(GDT["r0", entity])
+    GDT["r1", entity]:weld(GDT["r0", entity])
+})
+
+
+timer(getTimers():count() * 33 * _TICKINTERVAL, function () {
+    Ready = 1  
+})
+
+event tick() {
+    if ( Ready == 1) {
+        if ( !timerExists("poll") ) {
+            timer("poll", 66 * _TICKINTERVAL, function () {
+               
+            }) 
+        }
+    }
+}

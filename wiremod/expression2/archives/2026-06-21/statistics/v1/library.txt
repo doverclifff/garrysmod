@@ -1,0 +1,44 @@
+@name lib/statistics/v1/library
+@strict
+#include "lib/statistics/v1/private"
+
+function number sqddev(N:number, Mu:number) {
+    # Returns the squared deviation of the sample, given the mean of the source population.
+    # (v - Mu) ^ 2, where Mu is typically the mean of the population.
+    return ( -1 * Mu + N ) ^ 2
+}
+
+function number array:variance() {
+    # Returns the variance of the population.    
+    #[
+    https://en.wikipedia.org/wiki/Variance:
+    "In probability theory and statistics, variance is the expected value of the squared deviation 
+    from the mean of a random variable. The standard deviation is obtained as the square root of 
+    the variance. Variance is a measure of dispersion, meaning it is a measure of how far a set 
+    of numbers are spread out from their average value. It is the second central moment of a 
+    distribution, and the covariance of the random variable with itself, [...]"
+    ]#
+
+    # Cache pop. count & mean value of population.
+    local PopCount = This:count()
+    local Mu = This:average()
+    local Acc = 0
+    
+    # For-each sample, comput sqd. variance and accumulate.
+    foreach ( _:number, V:number = This ) {
+        Acc = Acc + ( -1 * Mu + V ) ^ 2   
+    }
+    
+    # Take mean of squared variances & return.
+    return Acc * PopCount ^ -1
+}
+
+function number array:stddev() {
+    # Returns the value of one standard deviation of the population.
+    return sqrt(This:variance())
+}
+
+function number gauss(Mu:number, Variance:number) {
+    # Returns a sample from the univariate gaussian/normal distribution.
+    return Mu + random(-Variance, Variance)
+}

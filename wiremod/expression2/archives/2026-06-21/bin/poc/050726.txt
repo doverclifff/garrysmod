@@ -1,0 +1,117 @@
+@name bin/poc/050726
+@inputs
+@outputs
+@persist [GDT]:table [GRF]:array [AX BX CX DX EX FX GX HX]:number
+@trigger none
+
+propSpawnUndo(0)
+propSpawnEffect(0)
+
+function number table:checkKeyError(Key:string) {
+    # Asserts the key is valid in the given table or raises KeyError.
+    if ( This:keys():indexOf(Key) >= 1 ) {
+        return 1
+    } else {
+        print("KeyError: " + Key + " not in table keys.")
+        error("KeyError")
+    }
+}
+
+function number array:checkKeyExistsError(Key:string) {
+    # Asserts the key does not exist in the given array of keys or raises KeyExistsError.
+    if ( This:indexOf(Key) == 0 ) {
+        return 1
+    } else {
+        print("KeyExistsError: The key " + Key + " already exists in the given table.")
+        error("KeyExistsError")
+    }
+}
+
+function number array:checkIndexError(Index:number) {
+    # Asserts the index is valid in the given array or raises IndexError.
+    if ( 1 <= Index <= This:count() ) {
+        return 1
+    } else {
+        print("IndexError: Offset " + Index + " is out of bounds.")
+        error("IndexError") 
+    }
+}
+
+function table newGDT() {
+    # Creates a new Global Descriptor Table (GDT).
+    local GDT = table()
+    GDT["identity", array] = array()
+    GDT["entity", table] = table()
+    return GDT
+}
+
+function array newGRF() {
+    # Creates a new Global Register File (GRF).
+    local GRF = array(0, 0, 0, 0, 0, 0, 0, 0)
+    return GRF
+}
+
+# Initialize Global Descriptor Table (GDT).
+GDT = newGDT()
+
+# Initialize Global Register File (GRF).
+GRF = newGRF()
+
+# Create global labels for offsets into the GRF.
+AX = 1
+BX = 2
+CX = 3
+DX = 4
+EX = 5
+FX = 6
+GX = 7
+HX = 8
+
+# Silence unused variable warnings
+_ = array(AX, BX, CX, DX, EX, FX, GX, HX)
+
+function void addGDTIdentity(Identity:string) {
+    # Adds
+    GDT["identity", array]:checkKeyExistsError(Identity)
+    GDT["identity", array]:unshiftString(Identity)
+}
+
+function void setGDTEntity(Key:string, Ent:entity) {
+    # Alias for GDT["entity", table][Key, entity] = Ent
+    GDT["entity", table][Key, entity] = Ent
+    return
+}
+
+function entity getGDTEntity(Key:string) {
+    # Returns an entity from the GDT or raises KeyError.
+    GDT["entity", table]:checkKeyError(Key)
+    return GDT["entity", table][Key, entity]
+}
+
+function void setGRF(Offset:number, NewValue:number) {
+    # Overwrites the register at the offset address with NewValue.
+    GRF:checkIndexError(Offset)
+    GRF[Offset, number] = NewValue
+}
+
+function number getGRF(Offset:number) {
+    # Returns the value in the register at the given offset.
+    GRF:checkIndexError(Offset)
+    return GRF[Offset, number]   
+}
+
+function number accumulateGRF(Offset:number, Value:number) {
+    # Overwrites the register at the offset address with the sum of its value and the passed value.
+    GRF:checkIndexError(Offset)
+    GRF[Offset, number] = GRF[Offset, number] + Value
+    return GRF[Offset, number]
+}
+
+function void resetGRF() {
+    # Re-initializes the GRF.
+    GRF = newGRF()
+}
+
+event removed(Resetting:number) {
+    
+}
